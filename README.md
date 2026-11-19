@@ -6,7 +6,7 @@ Open this folder in Obsidian and begin at [START-HERE.md](START-HERE.md), or sen
 - [catalog](catalog/README.md): live Markdown source metadata.
 - [knowledge](knowledge/README.md): Markdown concepts, evidence and dated decisions.
 - [examples](examples/README.md): walkthrough in a temporary sandbox.
-- [extensions](extensions/README.md): reserved; none installed.
+- [extensions](extensions/README.md): portable domain workflows; wired entries are on START-HERE.md.
 - `tests/`: synthetic fixtures and automated checks; never live data.
 
 The code repository deliberately excludes live catalog and knowledge records, local settings, and staging files. A clean clone includes only the scaffold READMEs. Keep access-approved backups of live records separately; Git history in this code repo is not a vault backup. Do not force-add or blindly copy live records into the code repository.

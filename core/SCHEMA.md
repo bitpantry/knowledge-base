@@ -13,7 +13,7 @@ The source of truth is one UTF-8 Markdown note in the live [catalog](../catalog/
 
 The allowed `kind` values are `artifact` (ordinary file or document, including a PDF), `transcript`, `chat` (chat upload), `email`, `slack`, and `web`. Use the stable origin category, not its file extension; `file` is not a valid kind. The `file` command requires `kind`, `namespace`, `native_id`, `title`, `date` (YYYY-MM-DD), `pointer`, and `capture`; the tool computes `source_id`. `tags` and `fallback` are optional.
 
-A recovered pointer may change without changing provenance. It must resolve to the original identity; without authorized exact-match evidence the existing record stays put. The core does not store contents, excerpts, credentials, unsafe links, or project fields. Source-app permissions still apply. There are no installed extension models.
+A recovered pointer may change without changing provenance. It must resolve to the original identity; without authorized exact-match evidence the existing record stays put. The core does not store contents, excerpts, credentials, unsafe links, or project fields. Source-app permissions still apply. Extension models are separate from the core source catalog.
 
 Core CLI version: run the absolute or relative path to the tool with `--version`. The default catalog is relative to the tool location, not the shell’s working directory. Intake/observation paths work as normal shell-relative or absolute paths. A change to the canonical format requires separate review, a backed-up isolated migration test, and an explicit migration plan. Layout changes alone do not change this v1 record format.
 
