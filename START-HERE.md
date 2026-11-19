@@ -9,13 +9,12 @@ Version 1.1.0. A local, Markdown-first catalog of **sources and evidence**, not 
 - [Design a separate extension](core/EXTENDING.md)
 - [Source catalog contract](core/SCHEMA.md)
 - [Catalog](catalog/README.md)
-- [Try the synthetic examples](examples/README.md)
 
 The core owns source identity, metadata, references, and recovery rules. Account strategy, relationships, CRM deal notes, engagements, and reporting are examples of extensions, not source catalog fields. The original system or app remains authoritative for its records.
 
 ## Extensions
 
-- [Tool Loans](extensions/tool-loans/EXTENSION.md)
+No extensions are wired by default.
 
 ## For a fresh agent
 
@@ -27,5 +26,5 @@ Run the local checks (Python 3.9+):
 ```sh
 python3 -B core/catalog.py check
 python3 -B core/concepts.py check
-python3 -B -m unittest discover -s tests -v
+python3 -B core/reconcile_extension.py check
 ```
