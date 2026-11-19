@@ -8,6 +8,7 @@ Open this folder in Obsidian and begin at [START-HERE.md](START-HERE.md), or sen
 - `examples/`: source-recovery example; development walkthroughs are excluded from vault exports.
 - [extensions](extensions/README.md): portable domain workflows; wired entries are on START-HERE.md.
 - `tests/`: synthetic fixtures and automated checks; never live data.
+- [docs](docs/README.md): engineering design notes; not part of a working vault.
 
 The code repository deliberately excludes live catalog and knowledge records, local settings, and staging files. The live data directories contain only scaffold READMEs. Keep access-approved backups of live records separately; Git history in this code repo is not a vault backup. Do not force-add or blindly copy live records into the code repository.
 
@@ -15,16 +16,14 @@ Run `python3 core/catalog.py check` `python3 -B core/concepts.py check` and `pyt
 
 ## Start a new vault
 
-Export a committed core revision with `git archive`, not a clone or a copy of
-the development checkout. The export excludes the test suite and the Tool Loans
-demo. Use a new, explicitly chosen destination; never extract over a live vault.
+From this engineering checkout, run:
 
 ```sh
-mkdir "/path/to/new-vault" &&
-  git archive HEAD | tar -x -C "/path/to/new-vault"
+bash packaging/new-vault.sh "/path/to/new-vault"
 ```
 
-Initialize Git separately in the new vault if desired. For a vault that tracks
-live records, replace the development-only catalog and knowledge ignore rules
-with the vault's tracking policy before adding records. Review and validate
-updates separately; never reintroduce developer tests or demo extensions.
+Use a destination that does not exist. The command packages the committed core,
+adds live-vault documentation and record-tracking rules, and leaves out tests,
+engineering docs, the Tool Loans demo, the packaging scripts, and Git history.
+Initialize a separate Git repository in the new vault if desired. Its README
+describes how to review future core updates without overwriting live data.

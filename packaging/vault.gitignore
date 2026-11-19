@@ -1,0 +1,11 @@
+.DS_Store
+.obsidian/
+__pycache__/
+*.pyc
+*.repair-tmp
+/local/
+/intake/
+/archive/
+/.catalog.lock
+
+# Track approved catalog, knowledge, and extension records.
