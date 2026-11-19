@@ -1,0 +1,14 @@
+.DS_Store
+.obsidian/
+__pycache__/
+*.pyc
+*.repair-tmp
+/local/
+/intake/
+/archive/
+/.catalog.lock
+# The code repository contains only these empty-area instructions, not vault data.
+/catalog/*
+!/catalog/README.md
+/knowledge/*
+!/knowledge/README.md

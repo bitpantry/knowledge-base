@@ -1,0 +1,14 @@
+{
+  "attempted_pointer": "https://example.invalid/old/interview",
+  "status": "missing",
+  "authorized_search": true,
+  "candidates": [
+    {
+      "verified": true,
+      "kind": "transcript",
+      "namespace": "demo-north-harbor",
+      "native_id": "interview-2026-10-20",
+      "pointer": "https://example.invalid/new/interview"
+    }
+  ]
+}
