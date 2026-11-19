@@ -14,16 +14,26 @@ A private repository does not authorize sharing client material.
 
 ## Update the core
 
-Build a fresh staging vault from the chosen committed revision in the separate
-engineering checkout using its `packaging/new-vault.sh`. Use a temporary directory,
-not a sibling in a working projects folder. Compare that clean export with this
-vault and apply only reviewed changes to the shared runtime files (`core/`,
-`AGENTS.md`, `CLAUDE.md`, and linked reference examples). Review entry-point
-changes separately to preserve the vault scope and extension links. Don't merge
-the entire engineering repository or replace a live vault. Preserve live records,
-installed extensions, local settings, and the vault's Git configuration. If a
-record format changes, test migration on an authorized copy first. Commit updates
-only after validation, and publish only to the intended vault remote.
+From the vault folder, preview the latest published release from the eng base:
+
+```sh
+python3 -B core/update.py
+python3 -B core/update.py --apply --commit FULL_COMMIT_FROM_PREVIEW
+```
+
+Preview does not write to the vault. Apply updates only verified shared files:
+`core/`, `AGENTS.md`, `CLAUDE.md`, and the bundled source-recovery example.
+The installed revision and file fingerprints live in `.core-release.json`;
+track that file if the vault uses Git. Local changes to shared files block
+the update rather than being overwritten. Keep live records, installed
+extensions, settings, `README.md`, and `START-HERE.md` as they are. A public
+release needs no GitHub sign-in; private access uses an authenticated GitHub CLI.
+
+Run the checks below and review the diff before committing. Do not run the
+updater concurrently with other edits or Git operations. If an update was
+interrupted, compare with a known good checkout before retrying. Release assets
+on this channel are for compatible core updates only; any data migration needs
+separate review and testing.
 
 ```sh
 python3 -B core/catalog.py check

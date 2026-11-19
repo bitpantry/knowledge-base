@@ -27,3 +27,19 @@ adds live-vault documentation and record-tracking rules, and leaves out tests,
 engineering docs, the Tool Loans demo, the packaging scripts, and Git history.
 Initialize a separate Git repository in the new vault if desired. Its README
 describes how to review future core updates without overwriting live data.
+
+## Publish a compatible core update
+
+After committing and testing in the engineering base, export that exact commit
+to a fresh directory in OS temporary storage using `packaging/new-vault.sh`.
+Then package its managed runtime files:
+
+```sh
+python3 -B packaging/vault-release.py "$TEMP_VAULT" "$TEMP_DIR/knowledge-vault-core.zip"
+```
+
+Attach the resulting asset to a published, non-prerelease GitHub Release for
+that commit. The installed updater reads published releases, not untagged
+changes on `main`. Keep releases on this channel compatible with existing
+vault records; review data migrations separately. A release is not permission
+to sync or publish any vault's records.
