@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
-REPO = "bitpantry/knowledge-management"
+REPO = "bitpantry/knowledge-base"
 ASSET = "knowledge-vault-core.zip"
 MANIFEST = ".core-release.json"
 LIMIT = 8 * 1024 * 1024
