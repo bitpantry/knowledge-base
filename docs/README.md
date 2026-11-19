@@ -1,5 +1,7 @@
 # Knowledge Management architecture
 
+Read the canonical [Design Principles](DESIGN-PRINCIPLES.md) before changing the core.
+
 Start here if you're evaluating the design, maintaining the core, or deciding where a new capability belongs. This is a companion to the operational guides, not required reading each time someone opens the vault.
 
 ## Purpose

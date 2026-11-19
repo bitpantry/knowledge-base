@@ -14,13 +14,16 @@ fi
 root=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
 revision=$(git -C "$root" rev-parse --verify HEAD)
 archive=$(mktemp -d "${TMPDIR:-/tmp}/km-new-vault.XXXXXX")
-trap 'rm -f -- "$archive/core.tar" "$archive/README.md" "$archive/gitignore"; rmdir -- "$archive"' EXIT
+trap 'rm -f -- "$archive/core.tar" "$archive/README.md" "$archive/gitignore" "$archive/AGENTS.md"; rmdir -- "$archive"' EXIT
 git -C "$root" archive --format=tar "$revision" > "$archive/core.tar"
-git -C "$root" show "$revision:packaging/vault-README.md" > "$archive/README.md"
+git -C "$root" show "$revision:packaging/vault-README.md.in" > "$archive/README.md"
 git -C "$root" show "$revision:packaging/vault.gitignore" > "$archive/gitignore"
+
+git -C "$root" show "$revision:packaging/vault-AGENTS.md.in" > "$archive/AGENTS.md"
 
 mkdir -- "$dest"
 tar -xf "$archive/core.tar" -C "$dest"
 cp -- "$archive/README.md" "$dest/README.md"
+cp -- "$archive/AGENTS.md" "$dest/AGENTS.md"
 cp -- "$archive/gitignore" "$dest/.gitignore"
 printf 'Created vault at %s from %s\n' "$dest" "$revision"
