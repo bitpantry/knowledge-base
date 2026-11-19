@@ -31,7 +31,22 @@ python3 -B core/catalog.py --root "$DEMO" search "garden pump"
 
 For real intake put the externally reviewed metadata in your own JSON file, substitute the verified source values, and omit `--root "$DEMO"` to use the vault's catalog.
 
-Stable pointers are `https://` without query or credentials, or `vault://approved-alias/relative/path` for authorized external custody. The vault URI is a locator, not an automatic file read; resolve the alias with the approved storage owner. If a provider offers only a temporary link or a link needing a query that cannot safely be removed, don't improvise a link: hold it for review. Aliases, identity fields, and metadata follow actual permissions, not merely whether the target repo is private.
+Stable pointers are `https://` without query or credentials, or `vault://approved-alias/relative/path` for authorized external custody. The vault URI is a locator, not an automatic file read; see [Open an original source](#open-an-original-source). If a provider offers only a temporary link or a link needing a query that cannot safely be removed, don't improvise a link: hold it for review. Aliases, identity fields, and metadata follow actual permissions, not merely whether the target repo is private.
+
+## Open an original source
+
+For an evidence citation, use `python3 -B core/concepts.py cite EVIDENCE_ID` to find the catalog note and passage locator. Use `python3 -B core/catalog.py cite SOURCE_ID` for a source with no selected passage. Read the catalog note for `kind`, `namespace`, and `native_id` when verifying identity. Those fields identify the source; they are not lookup instructions. Select the lookup from the stored pointer, then use the evidence locator *inside* the verified original.
+
+- **HTTPS:** Open through the authorized provider account or approved browser. Verify that it is the referenced original.
+- **Vault URI:** Use the alias (the part after `vault://` and before the next slash) to select the documented lookup below. For another alias, ask the approved storage owner how to resolve it. If there is no documented or otherwise verified route, report that the original cannot be opened. Do not scan unrelated stores, infer a path from the namespace, or create a vault-local workaround.
+
+### MacWhisper session
+
+For `vault://macwhisper/sessions/<uuid>`, confirm the catalog kind is `transcript`, the path is exactly `sessions/<uuid>`, and the UUID matches the catalog's native ID. Use only the authorized Mac and MacWhisper library corresponding to the catalog's namespace. If you cannot verify which library is intended, stop rather than querying another one.
+
+On that Mac, the MacWhisper library used for this lookup is `~/Library/Application Support/MacWhisper/Database/main.sqlite`. Open the database **read-only**. In the `session` table, look up the exact UUID parsed as the 16-byte BLOB `id`; require a non-deleted session (`dateDeleted IS NULL`). Read the `transcriptline` rows whose `sessionId` matches that ID, ordered by `start`. Use a bound ID parameter, not a title search. The row's `start` and `end` are offsets in milliseconds. For a timestamp citation, read only the relevant passage around that offset. For example, `00:25:13` is 1,513,000 milliseconds from the start. This documents a read path for the observed library layout, not an app API or a guarantee about future schema versions.
+
+If the Mac is offline or the library or its layout cannot be verified, report the original as unavailable (unverified); if access is denied, report that explicitly. Treat a session as missing only if the correct library was verified and a successful exact lookup found no active session. Do not match by title, change the pointer, or copy the transcript into the vault. Indexed evidence remains available, but distinguish it from having reopened the original. Use [Recover a source](#recover-a-source) only if appropriate.
 
 ## Correct catalog metadata
 
