@@ -101,6 +101,54 @@ class ConceptsTest(unittest.TestCase):
         self.assertEqual(self.run_cli(KB,"check"),{"concepts":1,"evidence":4,"decisions":3})
         self.assertFalse(self.run_cli(SOURCE,"check")["problems"])
 
+    def make_legacy(self, note, source, value, body_value=None):
+        p=self.root/note["note"]
+        _,header,_=p.read_text(encoding="utf-8").split("---\n",2)
+        raw=("---\n"+header+"value: "+json.dumps(value,ensure_ascii=False)+"\n---\n\n"
+             "# System A\n\n[Catalog source](../../catalog/"+source["source_id"]+".md)"
+             "\n\nEvidence at timestamp 00:03:15.\n\n[Concept](../concepts/"+self.con+".md)"
+             "\n\n"+(value if body_value is None else body_value)+"\n")
+        p.write_text(raw,encoding="utf-8")
+        return p
+
+    def test_value_once_and_legacy_migration_preserves_semantics(self):
+        self.c()
+        src=self.src("Fictional Interview","2026-01-08","transcript")
+        text="System A routes urgent requests via Québec"
+        chosen=self.claim(src,text)
+        p=self.root/chosen["note"]
+        new=p.read_text(encoding="utf-8")
+        _,header,body=new.split("---\n",2)
+        self.assertNotIn("value: ",header)
+        self.assertNotIn("00:03:15",body)
+        self.assertEqual(body,"\n"+text+"\n")
+        self.choose("confirm","2026-01-12",self.view()["revision"],"--claim-id",chosen["id"])
+        before=self.view("answer","--trace")
+        cited=self.run_cli(KB,"cite",chosen["id"])
+        self.make_legacy(chosen,src,text)
+        legacy=p.read_bytes()
+        self.assertEqual(self.view("answer","--trace"),before)
+        self.assertEqual(self.run_cli(KB,"cite",chosen["id"]),cited)
+        self.assertEqual(self.claim(src,text)["status"],"already filed")
+        preview=self.run_cli(KB,"migrate-evidence")
+        self.assertEqual(preview["ids"],[chosen["id"]])
+        self.assertEqual(p.read_bytes(),legacy)
+        self.assertIn("stale migration",self.run_cli(KB,"migrate-evidence","--if-revision","wrong",expected=2))
+        self.assertEqual(p.read_bytes(),legacy)
+        self.assertEqual(self.run_cli(KB,"migrate-evidence","--if-revision",preview["revision"])["count"],1)
+        self.assertEqual(p.read_text(encoding="utf-8"),new)
+        self.assertEqual(self.view("answer","--trace"),before)
+        self.assertEqual(self.run_cli(KB,"migrate-evidence")["count"],0)
+
+    def test_inconsistent_legacy_claim_stops(self):
+        self.c()
+        src=self.src("Fictional Interview","2026-01-08","transcript")
+        note=self.claim(src,"Header claim")
+        p=self.make_legacy(note,src,"Header claim",body_value="A different claim")
+        raw=p.read_bytes()
+        self.assertIn("noncanonical",self.run_cli(KB,"migrate-evidence",expected=2))
+        self.assertEqual(p.read_bytes(),raw)
+
     def test_acronym_ambiguity_and_prior_link_preserved(self):
         src=self.src("Fictional Notes","2026-01-01")
         self.c("con-dcs-dispatch","Dispatch Control Service",["DCS"],"Dispatch")

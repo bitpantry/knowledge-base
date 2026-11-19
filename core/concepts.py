@@ -10,7 +10,7 @@ import sys
 
 from catalog import ROOT, clean_text, load_json, lookup, publish_note, require, write_lock
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 FOLDERS = {"concept":"concepts", "evidence":"evidence", "decision":"decisions"}
 ID = {
     "concept": re.compile(r"con-[a-z0-9]+(?:-[a-z0-9]+)*\Z"),
@@ -130,11 +130,16 @@ def safe_dir(base, kind):
     require(not root.is_symlink() and not parent.is_symlink(),"knowledge folders cannot be symlinks")
     return parent
 
-def render(record_id, kind, d):
+def render(record_id, kind, d, *, legacy_evidence=False):
+    meta = d
+    if kind == "evidence" and not legacy_evidence:
+        meta = {k:v for k,v in d.items() if k != "value"}
     lines=["---","record_id: "+encode(record_id),"record_type: "+encode(kind)]
-    lines += [k+": "+encode(v) for k,v in sorted(d.items())]
+    lines += [k+": "+encode(v) for k,v in sorted(meta.items())]
     if kind == "concept":
         content=["# "+d["name"],"",d["context"]]
+    elif kind == "evidence" and not legacy_evidence:
+        content = [d["value"]] if d["kind"] == "claim" else []
     elif kind == "evidence":
         content=["# "+d["observed_label"],"",
                  "[Catalog source](../../catalog/"+d["source_id"]+".md)",
@@ -153,23 +158,74 @@ def render(record_id, kind, d):
 def record_id(kind,d):
     return d["id"] if kind=="concept" else keyed("ev-" if kind=="evidence" else "dec-",d)
 
+def read_record(p, kind, raw):
+    parts=raw.split("---\n",2)
+    require(len(parts)==3 and parts[0]=="",str(p)+": missing metadata")
+    pairs=[line.split(": ",1) for line in parts[1].splitlines()]
+    require(all(len(pair)==2 for pair in pairs),str(p)+": invalid metadata")
+    values={k:json.loads(v) for k,v in pairs}
+    require(len(values)==len(pairs),str(p)+": repeated key")
+    rid=values.pop("record_id",None)
+    require(values.pop("record_type",None)==kind,str(p)+": wrong type")
+    if kind=="evidence" and values.get("kind")=="claim" and "value" not in values:
+        body=parts[2]
+        require(body.startswith("\n") and body.endswith("\n"),str(p)+": invalid claim body")
+        values["value"]=body[1:-1]
+    d=NORMALIZE[kind](values)
+    require(rid==p.stem==record_id(kind,d),str(p)+": record ID does not match content")
+    canonical=render(rid,kind,d)
+    legacy=kind=="evidence" and raw==render(rid,kind,d,legacy_evidence=True)
+    require(raw==canonical or legacy,str(p)+": invalid/noncanonical record")
+    return rid,d,canonical
+
+
+def record_paths(base, kind):
+    for p in sorted(safe_dir(base,kind).glob("*.md")):
+        require(not p.is_symlink() and p.is_file(),"knowledge record must be a regular file")
+        yield p
+
+
 def records(base, kind):
     result={}
-    for p in sorted(safe_dir(base,kind).glob("*.md")):
-        require(not p.is_symlink(),"knowledge record cannot be a symlink")
-        raw=p.read_text(encoding="utf-8")
-        parts=raw.split("---\n",2)
-        require(len(parts)==3 and parts[0]=="",str(p)+": missing metadata")
-        pairs=[line.split(": ",1) for line in parts[1].splitlines()]
-        require(all(len(pair)==2 for pair in pairs),str(p)+": invalid metadata")
-        values={k:json.loads(v) for k,v in pairs}
-        require(len(values)==len(pairs),str(p)+": repeated key")
-        rid=values.pop("record_id",None)
-        require(values.pop("record_type",None)==kind,str(p)+": wrong type")
-        d=NORMALIZE[kind](values)
-        require(rid==p.stem==record_id(kind,d) and render(rid,kind,d)==raw,str(p)+": invalid/noncanonical record")
+    for p in record_paths(base,kind):
+        rid,d,_=read_record(p,kind,p.read_bytes().decode("utf-8"))
         result[rid]=d
     return result
+
+
+def migrate_evidence(base, if_revision=None):
+    """Rewrite canonical legacy evidence notes without changing logical records."""
+    def plan():
+        before=check_knowledge(base)
+        changes=[]
+        for p in record_paths(base,"evidence"):
+            raw=p.read_bytes().decode("utf-8")
+            rid,_,canonical=read_record(p,"evidence",raw)
+            if raw!=canonical:
+                changes.append((p,rid,raw,canonical))
+        rev=keyed("migration-",[(rid,raw) for _,rid,raw,_ in changes])
+        return before,changes,rev
+
+    if if_revision is None:
+        _,changes,rev=plan()
+        return {"status":"preview","revision":rev,"count":len(changes),"ids":[rid for _,rid,_,_ in changes]}
+    with write_lock(base):
+        before,changes,rev=plan()
+        require(rev==if_revision,"stale migration preview; review again")
+        written=[]
+        try:
+            for p,_,raw,canonical in changes:
+                require(not p.is_symlink() and p.read_bytes().decode("utf-8")==raw,
+                        "record changed during migration; review again")
+                publish_note(p,canonical,replace=True)
+                written.append((p,raw))
+            require(check_knowledge(base)==before,"record counts changed during migration")
+        except Exception:
+            for p,raw in reversed(written):
+                publish_note(p,raw,replace=True)
+            raise
+    return {"status":"migrated","count":len(changes),"ids":[rid for _,rid,_,_ in changes]}
+
 
 def put(base, kind, records_for_kind, d):
     rid=record_id(kind,d)
@@ -291,6 +347,8 @@ def main():
     p.add_argument("--version",action="version",version=VERSION)
     sub=p.add_subparsers(dest="command",required=True)
     sub.add_parser("check")
+    migration=sub.add_parser("migrate-evidence")
+    migration.add_argument("--if-revision",help="apply only the matching preview; omit for a read-only preview")
     for kind in ("concept","evidence"):
         x=sub.add_parser("add-"+kind); x.add_argument("input")
     x=sub.add_parser("find"); x.add_argument("query"); x.add_argument("--context")
@@ -338,6 +396,8 @@ def main():
                              a.command=="review" or a.trace)
     elif a.command in {"confirm","skip"}:
         result=adjudicate(base,a)
+    elif a.command=="migrate-evidence":
+        result=migrate_evidence(base,a.if_revision)
     else:
         result=check_knowledge(base)
     print(json.dumps(result,ensure_ascii=False,indent=2))
