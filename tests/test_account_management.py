@@ -176,11 +176,30 @@ class AccountManagementTest(unittest.TestCase):
         self.assertIn("River",line)
         self.assertIn(one,line); self.assertIn(two,line)
         self.assertEqual(out.read_text().count("person-river.md"),1)
+        graph=out.read_text().split("```mermaid",1)[1].split("```",1)[0]
+        self.assertIn("flowchart TD",graph)
+        self.assertEqual(graph.count("n_person_jordan --> n_person_river"),1)
+        self.assertNotIn("n_person_river -->",graph)
+        self.assertIn("River #91;Finch#93;",graph)
         link("river","sam"); link("avery","blair"); link("blair","avery")
         body=out.read_text()
         self.assertIn("conflicting manager claims",body)
         self.assertIn("cycle in manager claims",body)
         self.assertIn("person-terry.md) — manager not recorded",body)
+        graph=body.split("```mermaid",1)[1].split("```",1)[0]
+        self.assertNotIn("-->",graph)
+        self.assertIn('n_person_avery["Avery Ash - circular manager claims"]',graph)
+        self.assertIn('n_person_terry["Terry Elm - manager not recorded"]',graph)
+        self.write(self.cli,"add","person",d=self.record("person",id="person-escaped",
+                   title='Name " ] ``` %%{init:x}%% <b> #quot; 東京'))
+        chart=out.read_text()
+        graph=chart.split("```mermaid",1)[1].split("```",1)[0]
+        injected=next(line for line in graph.splitlines() if 'n_person_escaped' in line)
+        self.assertEqual(injected.count('"'),2)
+        for unsafe in ("```","%%","<b>","#quot;"):
+            self.assertNotIn(unsafe,injected)
+        self.assertIn("#34; #93; #96;#96;#96;",injected)
+        self.assertIn("#26481;#20140;",injected)
         self.assertIn("River \\[Finch\\]",body)
         self.write(self.cli,"add","person",d=self.record("person",id="person-post",title="Later Person"))
         self.assertIn("Later Person",out.read_text())

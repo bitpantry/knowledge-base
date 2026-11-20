@@ -13,6 +13,38 @@ def label(value):
     return re.sub(r"([\\[`\]*_])", r"\\\1", html.escape(value, quote=False))
 
 
+def graph_id(rid):
+    # Core Person IDs allow lowercase ASCII, digits and dashes only.
+    return "n_" + rid.replace("-", "_")
+
+
+def graph_label(value):
+    # Mermaid quoted-text entities are decimal #codepoint;. Encode all syntax
+    # characters (including # itself) rather than passing through HTML,
+    # quotes, Markdown fences, Mermaid directives, or line separators.
+    return "".join(c if c in " -,.()" or c.isascii() and c.isalnum()
+                   else f"#{ord(c)};" for c in value)
+
+
+def diagram(scoped, key, parents, conflicts, cycles):
+    lines = ["```mermaid", "flowchart TD"]
+    for rid in sorted(scoped, key=key):
+        p = scoped[rid]
+        name = p["title"]
+        if p.get("aliases"):
+            name += " (" + ", ".join(p["aliases"]) + ")"
+        if rid in conflicts:
+            name += " - conflicting manager claims"
+        elif rid in cycles:
+            name += " - circular manager claims"
+        elif rid not in parents:
+            name += " - manager not recorded"
+        lines.append(f'  {graph_id(rid)}["{graph_label(name)}"]')
+    for rid in sorted(set(parents) - cycles, key=key):
+        lines.append(f"  {graph_id(parents[rid])} --> {graph_id(rid)}")
+    return [*lines, "```", ""]
+
+
 def render(base, people, refreshed):
     lines = ["# Org Chart", "", f"Refreshed: {refreshed} (UTC).",
              "", "Read this as a view of recorded reporting claims, not a verified or complete company org chart.", ""]
@@ -53,7 +85,9 @@ def render(base, people, refreshed):
         for rid,parent in parents.items():
             if rid not in cycles:
                 children.setdefault(parent, []).append(rid)
-        lines += [f"## {label(account)}", "", "**Reporting hierarchy**", ""]
+        lines += [f"## {label(account)}", "", "Arrows run from manager to direct report. Disputed and circular edges are omitted.", ""]
+        lines += diagram(scoped, key, parents, conflicts, cycles)
+        lines += ["**People and evidence**", ""]
         roots = sorted(set(scoped) - (set(parents) - cycles), key=key)
         queue = [(rid,0) for rid in reversed(roots)]
         while queue:
