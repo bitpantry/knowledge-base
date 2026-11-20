@@ -37,6 +37,14 @@ rewrites live notes on its own.
 4. Classify each entry: a **mention** names something but asserts no proposition. A **claim** is a short paraphrase of an assertion, with a context-specific comparison scope and a single question key; do not promote it to truth. Capture real disagreements under matching scope/question where appropriate. Do not conflate facts about different units, times, versions or systems. Use a specific locator (e.g., page 10 + section Operational Interfaces, service manual §4, or 00:21:35 + speaker) when available and do not invent precision. Do not copy raw documents, large quotes, full transcript text, secret pointers, or metadata not approved for this audience.
 5. File the source with the [catalog workflow](WORKFLOWS.md#file-and-find-a-source), then pass short, reviewed metadata to the concepts CLI. Use approved intake files outside the project. Re-run checks. The agent performs extraction and human-context judgement; the Python tool handles structure, references, deduplication and deterministic reads. It does not independently open or verify a source.
 
+When the source is in scope for an installed model, read the extension's intake
+rules before finishing. Search for related existing records. In an authorized
+meeting intake, for example, keep timestamped evidence, then record supported
+links from known people to the meeting and the passages they actually spoke.
+Do this as part of ingestion, not as a second optional classification run.
+Leave ambiguous identities unresolved. Use the [core model store](MODEL-STORE.md)
+through the extension's model command; never write a parallel record store.
+
 A concept needs `id`, `name`, `aliases` (list) and `context`. Evidence needs `source_id`, `locator` (type/value plus optional speaker and section), `observed_label` and `kind`. Use either a resolved `concept_id` or a `candidates` list; for no candidate use `context` and leave the concept unlinked. Supply matching explicit context for a resolved link when the observed label is already used by multiple concepts. Claims additionally need `scope`, `question` (lower-kebab-case keys) and a short `value` (paraphrase). Use comparable wording in the value for semantically equivalent answers in the same question. Case and whitespace alone are ignored, but the tool cannot tell differently worded agreement from contradiction.
 
     python3 -B core/concepts.py find "System A"

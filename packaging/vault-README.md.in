@@ -6,7 +6,7 @@ This is a working vault, not the [core engineering checkout](https://github.com/
 ## What belongs here
 
 `catalog/` records sources and where to find them. `knowledge/` contains concepts, evidence,
-decisions and interpretations. `extensions/` starts empty apart from its README;
+decisions, interpretations, typed records and sourced relationships. `extensions/` starts empty apart from its README;
 add a domain extension only when you need one. Keep originals in their source systems.
 If using Git, track approved records and extensions. Do not commit credentials,
 raw source material, staging files, or anything the repository audience is not authorized to see.
@@ -43,4 +43,5 @@ testing.
 python3 -B core/catalog.py check
 python3 -B core/concepts.py check
 python3 -B core/reconcile_extension.py check
+python3 -B core/model_store.py check
 ```

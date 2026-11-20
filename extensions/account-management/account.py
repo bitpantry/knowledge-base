@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Account Management's sole writer for Person, Interaction and Lead notes."""
+"""Account Management model validation and workflows over the core record store."""
 import argparse
 from datetime import date
 import hashlib
@@ -12,9 +12,11 @@ BASE=Path(__file__).resolve().parent
 ROOT=BASE.parents[1]
 sys.path.insert(0,str(ROOT/"core"))
 
-from catalog import clean_text, load_json, lookup, publish_note, require, write_lock
+from catalog import clean_text, lookup, require, write_lock
 from concepts import cite_evidence, encode, records as core_records
+import model_store
 
+OWNER="account-management"
 KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
 SLUG=r"[a-z0-9]+(?:-[a-z0-9]+)*"
 STATUS={"open","qualifying","closed"}
@@ -47,8 +49,9 @@ def ids(v,name,pattern):
 
 def normalize(kind,d):
     required={"id","account","title"}|({"date","person_ids"} if kind=="interaction" else set())
-    require(isinstance(d,dict) and required<=set(d)<=KEYS[kind],"missing or unexpected "+kind+" fields")
-    normalized={**d}
+    require(isinstance(d,dict) and required<=set(d)<=KEYS[kind]|{"type"},"missing or unexpected "+kind+" fields")
+    require(d.get("type",kind)==kind,"record type does not match model")
+    normalized={**d,"type":kind}
     token(d["id"],"record ID",kind+"-")
     token(d["account"],"account scope")
     text(d["title"],"title")
@@ -70,48 +73,30 @@ def normalize(kind,d):
         normalized["status"]=status
     return normalized
 
-def folder(kind):
-    p=BASE/"records"/KINDS[kind]
-    require(not p.is_symlink() and not p.parent.is_symlink(),"unsafe record directory")
-    return p
+def models():
+    found=model_store.records(ROOT,OWNER)
+    for rid,d in found.items():
+        kind=d.get("type")
+        require(kind in KINDS and rid==d.get("id") and normalize(kind,d)==d,
+                "noncanonical Account Management payload: "+rid)
+    return found
 
-def render(kind,d):
-    header={k:v for k,v in d.items() if k not in {"title","notes"}}
-    rows=["---","type: "+encode(kind),*[k+": "+encode(v) for k,v in sorted(header.items())],
-          "---","","# "+d["title"]]
-    if d["notes"] is not None:
-        rows += ["",d["notes"]]
-    return "\n".join(rows+[""])
-
-def parse(kind,p):
-    require(p.is_file() and not p.is_symlink(),"record is not a regular file")
-    raw=p.read_text(encoding="utf-8")
-    head=raw.split("---\n",2)
-    require(len(head)==3 and not head[0],"invalid record metadata")
-    pairs=[line.split(": ",1) for line in head[1].splitlines()]
-    require(all(len(row)==2 for row in pairs),"invalid record metadata")
-    fields={k:json.loads(v) for k,v in pairs}
-    require(len(fields)==len(pairs) and fields.pop("type",None)==kind,"invalid or repeated metadata")
-    match=re.fullmatch(r"\n# ([^\n]+)(?:\n\n([^\n]+))?\n",head[2])
-    require(match,"invalid record body")
-    result=normalize(kind,{**fields,"title":match.group(1),"notes":match.group(2)})
-    require(p.stem==result["id"] and raw==render(kind,result),"noncanonical or mismatched record")
-    return result
-
-def one(kind,rid):
+def one(kind,rid,stored=None):
     token(rid,"record ID",kind+"-")
-    p=folder(kind)/(rid+".md")
-    require(p.exists(),"unknown "+kind+": "+rid)
-    return p,parse(kind,p)
+    d=model_store.read_model(ROOT,rid,OWNER) if stored is None else stored.get(rid)
+    require(d is not None and d.get("type")==kind,"unknown "+kind+": "+rid)
+    require(normalize(kind,d)==d,"noncanonical Account Management payload: "+rid)
+    return model_store.path(ROOT,rid),d
 
-def list_kind(kind):
-    return [(p,parse(kind,p)) for p in sorted(folder(kind).glob("*.md"))]
+def list_kind(kind,stored=None):
+    found=models() if stored is None else stored
+    return [(model_store.path(ROOT,rid),d) for rid,d in sorted(found.items()) if d["type"]==kind]
 
-def verify(d, kind, evidence=None):
+def verify(d, kind, evidence=None, stored=None):
     for pid in d.get("person_ids",[]):
-        require(one("person",pid)[1]["account"]==d["account"],"person belongs to another account scope: "+pid)
+        require(one("person",pid,stored)[1]["account"]==d["account"],"person belongs to another account scope: "+pid)
     for iid in d.get("interaction_ids",[]):
-        require(one("interaction",iid)[1]["account"]==d["account"],"interaction belongs to another account scope: "+iid)
+        require(one("interaction",iid,stored)[1]["account"]==d["account"],"interaction belongs to another account scope: "+iid)
     for sid in d["source_ids"]:
         lookup(ROOT,sid)
     if d["evidence_ids"]:
@@ -120,46 +105,103 @@ def verify(d, kind, evidence=None):
             require(eid in es,"unknown core evidence: "+eid)
             cite_evidence(ROOT,eid,es[eid])
 
+def scoped_evidence(d, evidence):
+    named=set(d["evidence_ids"])
+    sources=set(d["source_ids"])
+    return {eid:ev for eid,ev in evidence.items() if eid in named or ev["source_id"] in sources}
+
+def bound_speakers(d, bindings, evidence, stored):
+    require(isinstance(bindings,dict),"speaker_bindings must map exact source labels to participant IDs")
+    if not bindings:
+        return []
+    require(d["source_ids"] or d["evidence_ids"],"speaker bindings require a scoped source or selected evidence")
+    selected=scoped_evidence(d,evidence)
+    for label,pid in bindings.items():
+        text(label,"source speaker label")
+        token(pid,"bound person ID","person-")
+        require(pid in d["person_ids"],"bound speaker must be an existing participant")
+        require(one("person",pid,stored)[1]["account"]==d["account"],"bound speaker belongs to another account")
+        require(any(ev["locator"].get("speaker")==label for ev in selected.values()),
+                "exact speaker label not found in scoped evidence: "+label)
+    relationships=model_store.relationships(ROOT,d["account"])
+    edges=[]
+    for eid,ev in sorted(selected.items()):
+        pid=bindings.get(ev["locator"].get("speaker"))
+        if pid is None:
+            continue
+        cite_evidence(ROOT,eid,ev)
+        require(not any(edge["predicate"]=="said" and edge["to_id"]==eid and edge["from_id"]!=pid
+                        for edge in relationships.values()),"evidence already has a different speaker in this account: "+eid)
+        edges.append((pid,eid,ev["source_id"]))
+    return edges
+
 def digest(kind,d):
-    return hashlib.sha256(render(kind,d).encode("utf-8")).hexdigest()
+    return hashlib.sha256(encode(d).encode("utf-8")).hexdigest()
 
 def receipt(kind,p,d,trace=False):
     response={"kind":kind,"note":p.relative_to(ROOT).as_posix(),"revision":digest(kind,d),**d}
     if trace:
-        es=core_records(ROOT,"evidence") if d["evidence_ids"] else {}
+        es=core_records(ROOT,"evidence") if d["evidence_ids"] or kind in {"interaction","person"} else {}
         verify(d,kind,es)
         response["citations"]={
             "source":[{"source_id":sid,"note":p.relative_to(ROOT).as_posix(),"title":s["title"],"pointer":s["pointer"]}
                       for sid in d["source_ids"] for p,s in [lookup(ROOT,sid)]],
             "evidence":[cite_evidence(ROOT,eid,es[eid]) for eid in d["evidence_ids"]]
         }
+        if kind in {"interaction","person"}:
+            r=model_store.relationships(ROOT,d["account"])
+            scope=scoped_evidence(d,es) if kind=="interaction" else es
+            people=set(d.get("person_ids",[])) if kind=="interaction" else {d["id"]}
+            response["speaker_attributions"]=[{**edge,"citation":cite_evidence(ROOT,edge["to_id"],scope[edge["to_id"]])}
+                 for _,edge in sorted(r.items()) if edge["predicate"]=="said" and edge["from_id"] in people
+                 and edge["to_id"] in scope]
+        if kind=="person":
+            response["interactions"]=[{key:item[key] for key in ("id","date","title")}
+                for _,item in list_kind("interaction") if item["account"]==d["account"] and d["id"] in item["person_ids"]]
+            response["interactions"].sort(key=lambda item:(item["date"],item["id"]),reverse=True)
     return response
 
 def submit(kind,data):
+    require(isinstance(data,dict),"record input must be an object")
+    data=dict(data)
+    require(kind=="interaction" or "speaker_bindings" not in data,"speaker_bindings is for interactions only")
+    bindings=data.pop("speaker_bindings",{})
     with write_lock(ROOT):
         d=normalize(kind,data)
-        verify(d,kind)
-        p=folder(kind)/(d["id"]+".md")
+        stored=models()
+        evidence=core_records(ROOT,"evidence") if d["evidence_ids"] or bindings else {}
+        verify(d,kind,evidence,stored)
+        edges=bound_speakers(d,bindings,evidence,stored)
+        p=model_store.path(ROOT,d["id"])
         status="already filed"
-        if p.exists() or p.is_symlink():
-            require(parse(kind,p)==d,"ID already exists with different contents")
+        if d["id"] in stored:
+            require(stored[d["id"]]==d,"ID already exists with different contents")
         else:
-            p.parent.mkdir(parents=True,exist_ok=True)
-            publish_note(p,render(kind,d))
+            model_store.write_model(ROOT,OWNER,d)
             status="filed"
-        return {"result":status,**receipt(kind,p,d)}
+        for pid,eid,sid in edges:
+            model_store.write_relationship(ROOT,d["account"],pid,"said",eid,evidence_ids=[eid],source_ids=[sid])
+        return {"result":status,"speaker_bindings_resolved":len(edges),**receipt(kind,p,d)}
 
 def change_status(rid,status,revision):
     with write_lock(ROOT):
-        p,d=one("lead",rid)
-        verify(d,"lead")
+        stored=models()
+        p,d=one("lead",rid,stored)
+        verify(d,"lead",stored=stored)
         require(revision==digest("lead",d),"stale lead revision; read current record")
         if d["status"]==status:
             return {"result":"unchanged",**receipt("lead",p,d)}
         new={**d,"status":status}
-        require(parse("lead",p)==d,"lead changed while editing; review and retry")
-        publish_note(p,render("lead",new),replace=True)
+        require(one("lead",rid)[1]==d,"lead changed while editing; review and retry")
+        model_store.write_model(ROOT,OWNER,new,replace=True)
         return {"result":"status changed",**receipt("lead",p,new)}
+
+def load_input(filename):
+    def unique(pairs):
+        d=dict(pairs)
+        require(len(d)==len(pairs),"duplicate input field or speaker label")
+        return d
+    return json.loads(Path(filename).read_text(encoding="utf-8"),object_pairs_hook=unique)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -173,7 +215,7 @@ def main():
     sub.add_parser("check")
     args=p.parse_args()
     if args.action=="add":
-        result=submit(args.kind,load_json(args.input))
+        result=submit(args.kind,load_input(args.input))
     elif args.action=="show":
         result=receipt(args.kind,*one(args.kind,args.id),trace=args.trace)
     elif args.action=="list":
@@ -183,10 +225,11 @@ def main():
         result=change_status(args.id,args.status,args.if_revision)
     else:
         result={}
+        stored=models()
         for kind in KINDS:
-            found=list_kind(kind)
+            found=list_kind(kind,stored)
             for _,d in found:
-                verify(d,kind)
+                verify(d,kind,stored=stored)
             result[KINDS[kind]]=len(found)
     print(json.dumps(result,ensure_ascii=False,indent=2))
 

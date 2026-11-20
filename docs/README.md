@@ -14,10 +14,10 @@ Keep knowledge usable after the conversation ends. In a home project, a service 
 
 | Layer | Owns | Where to look |
 | --- | --- | --- |
-| **Core** | Domain-neutral source identity and pointers; concepts, mentions, claims, and decisions; shared validation and retrieval | [Core contracts](../core/SCHEMA.md), [concepts contract](../core/CONCEPTS.md) |
+| **Core** | Domain-neutral source identity and pointers; concepts, mentions, claims, and decisions; shared validation, typed record and relationship storage, and retrieval | [Core contracts](../core/SCHEMA.md), [concepts contract](../core/CONCEPTS.md) |
 | **Extension** | A bounded domain capability and its audience and dependency rules | [Extension contract](../core/EXTENDING.md), [drop-in folders](../extensions/README.md) |
 | **Module** | A coherent workflow inside one extension | The module links on that extension's own entry page |
-| **Model** | A record shape, stable identity, source of truth, and one authoritative writer | The owning module's model documentation |
+| **Model** | A record shape, stable identity, domain validation, and a command that calls the core writer | The owning module's model documentation |
 
 The live source catalog is in [catalog](../catalog/README.md). [Knowledge](../knowledge/README.md) holds source-linked concept, evidence, and decision notes. The repo tracks their scaffolds, not the live notes, and is not a backup of the vault. Originals remain at their authorized sources or approved custody; even titles, locators, and pointers must suit the vault's audience. Examples and tests use synthetic data.
 
