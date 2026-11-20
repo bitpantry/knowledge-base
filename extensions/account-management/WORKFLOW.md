@@ -40,7 +40,7 @@ Installation and the optional retrospective preview use the core's shared workfl
 
 ## Generated org chart
 
-Open `views/README.md` in Obsidian, then choose Org Chart and use Reading view for the built-in Mermaid diagram. Arrows run from manager to direct report. The same note has a text fallback and source links; disputed and circular arrows are omitted from the diagram and listed with evidence below. To create the view initially or rebuild it after a bulk import or other low-level edit, run:
+Open `views/README.md` in Obsidian, then choose Org Chart and use Reading view for the built-in Mermaid diagram. Arrows run from manager to direct report. Use the compact Person links below the diagram to open the exact records: boxes show display names, and Obsidian’s native Mermaid name-based links cannot target these ID filenames reliably. Disputed and circular arrows are omitted and listed as exceptions. Direct evidence links remain outside the chart. To create the view initially or rebuild it after a bulk import or other low-level edit, run:
 
     python3 -B extensions/account-management/account.py rebuild-org-chart
 
