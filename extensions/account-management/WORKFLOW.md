@@ -6,7 +6,16 @@ The CLI validates Account Management models and delegates persistence to the cor
 
 ## Contextual relationships
 
-The extension only defines its model fields and the meaning of its own Person and Interaction references. For contextual links from any source, use [the core workflow](../../core/MODEL-STORE.md). Read the source and the vault's current registered labels, use only a matching directed label, and supply the exact evidence or source IDs. An unfamiliar term, ambiguous identity, or nearby record alone is not a supported link. Do not generate links from a model write.
+The extension only defines its model fields and the meaning of its own Person and Interaction references. For contextual links from any source, including direct user statements, use [the core workflow](../../core/MODEL-STORE.md). Read the source and the vault's current registered labels, use only a matching directed label, and supply the exact evidence or source IDs. An unfamiliar term, ambiguous identity, or nearby record alone is not a supported link. Do not generate links from a model write.
+
+**Reporting lines.** For an explicit, unambiguous statement such as “River reports to Jordan,” resolve both names to their existing in-scope Person IDs, file the statement as an attributable source and precise evidence, then write `reports-to` from the direct report to the manager. This includes a direct user statement: cite the message by stable ID and link where available, noting that it is user-supplied, not independently verified. Check existing links first. Do not infer reporting from title, a common team, or project coordination. Use one direction, not a second inverse label. If new evidence conflicts with an existing direct manager, preserve both source claims and surface the disagreement; do not silently overwrite or pick a current manager. Do not make unverified links look confirmed.
+
+    python3 -B core/model_store.py labels
+    # Only if not already registered:
+    python3 -B core/model_store.py define-label reports-to --definition "A person's direct organizational reporting line to their manager." --direction "Direct report to manager"
+    python3 -B core/model_store.py link ACCOUNT REPORT_PERSON_ID reports-to MANAGER_PERSON_ID --evidence-id EVIDENCE_ID
+
+For other relationships, reuse the vault's matching label or define a reusable one under the core workflow. These examples are not an exhaustive vocabulary.
 
 A model trace shows both incoming and outgoing core relationships for that endpoint, together with source/evidence citations. A person trace also lists their same-account interactions by date and title. This is a read of the core's relationships, not a second copy or a private vocabulary.
 

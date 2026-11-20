@@ -120,6 +120,37 @@ class AccountManagementTest(unittest.TestCase):
         self.assertEqual(self.invoke(tool,"check"),{"model_records":3,"relationships":2})
         self.assertTrue(all(p.read_bytes()==old for p,old in snapshot.items()))
 
+    def test_explicit_reporting_direction_and_alias_are_traceable(self):
+        folder=self.root/"core"
+        src=self.write(folder/"catalog.py","file",d={
+            "kind":"artifact","namespace":"fictional-test","native_id":"user-statement",
+            "title":"Fictional user statement","date":"2026-11-20",
+            "pointer":"https://example.invalid/user-statement","capture":"approved"})
+        ev=self.write(folder/"concepts.py","add-evidence",d={
+            "source_id":src["source_id"],"locator":{"type":"message","value":"example-01"},
+            "observed_label":"Fictional user identifies the manager and alternate name",
+            "kind":"mention","context":"Fictional workshop fixture"})
+        eid=ev["id"]
+        report=self.write(self.cli,"add","person",d=self.record("person",title="River Finch"))
+        manager=self.write(self.cli,"add","person",d=self.record("person",id="person-jordan",title="Jordan Birch"))
+        aid=manager["id"]
+        args=("add-person-alias",aid,"Jordy","--evidence-id",eid,"--if-revision")
+        updated=self.invoke(self.cli,*args,manager["revision"])
+        self.assertEqual(updated["aliases"],["Jordy"])
+        self.assertEqual(self.invoke(self.cli,*args,updated["revision"])["result"],"unchanged")
+        self.assertIn("stale", self.invoke(self.cli,*args,manager["revision"],code=2))
+        tool=folder/"model_store.py"
+        self.invoke(tool,"define-label","reports-to","--definition","A person's direct organizational reporting line to their manager.","--direction","Direct report to manager")
+        for _ in range(2):
+            self.invoke(tool,"link",report["account"],report["id"],"reports-to",aid,"--evidence-id",eid)
+        rt=self.invoke(self.cli,"show","person",report["id"],"--trace")
+        mt=self.invoke(self.cli,"show","person",aid,"--trace")
+        self.assertEqual([(x["predicate"],x["direction"],x["to_id"]) for x in rt["relationships"]],
+                         [("reports-to","outgoing",aid)])
+        self.assertEqual([(x["direction"],x["from_id"]) for x in mt["relationships"]],[("incoming",report["id"])])
+        self.assertEqual(mt["citations"]["evidence"][0]["source_id"],src["source_id"])
+        self.assertEqual(rt["relationships"][0]["citations"]["evidence"][0]["locator"]["value"],"example-01")
+
     def test_reject_unknown_cross_account_or_conflicting_reference(self):
         self.write(self.cli,"add","person",d=self.record("person"))
         self.write(self.cli,"add","interaction",d=self.record("interaction"))

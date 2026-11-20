@@ -21,7 +21,7 @@ KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
 SLUG=r"[a-z0-9]+(?:-[a-z0-9]+)*"
 STATUS={"open","qualifying","closed"}
 KEYS={
-    "person":{"id","account","title","notes","source_ids","evidence_ids"},
+    "person":{"id","account","title","notes","source_ids","evidence_ids","aliases"},
     "interaction":{"id","account","title","notes","source_ids","evidence_ids","date","person_ids"},
     "lead":{"id","account","title","notes","source_ids","evidence_ids","person_ids","interaction_ids","status"},
 }
@@ -61,6 +61,15 @@ def normalize(kind,d):
     normalized["notes"]=notes
     for field,patt in [("source_ids",r"src-[0-9a-f]{24}"),("evidence_ids",r"ev-[0-9a-f]{24}")]:
         normalized[field]=ids(d.get(field,[]),field,patt)
+    if kind=="person" and "aliases" in d:
+        aliases=d["aliases"]
+        require(isinstance(aliases,list) and bool(aliases),"aliases must be a nonempty list")
+        for alias in aliases:
+            text(alias,"alias",200)
+        folded=[alias.casefold() for alias in aliases]
+        require(len(set(folded))==len(folded) and d["title"].casefold() not in folded,
+                "duplicate alias or display name")
+        normalized["aliases"]=sorted(aliases,key=str.casefold)
     if kind in {"interaction","lead"}:
         normalized["person_ids"]=ids(d.get("person_ids",[]),"person IDs","person-"+SLUG)
     if kind=="interaction":
@@ -162,6 +171,20 @@ def change_status(rid,status,revision):
         model_store.write_model(ROOT,OWNER,new,replace=True)
         return {"result":"status changed",**receipt("lead",p,new)}
 
+def add_alias(rid,alias,revision,evidence_id):
+    with write_lock(ROOT):
+        p,d=one("person",rid)
+        require(revision==digest("person",d),"stale person revision; read current record")
+        old=d.get("aliases",[])
+        match=next((name for name in old if name.casefold()==alias.casefold()),None)
+        new=normalize("person",{**d,"aliases":old if match else [*old,alias],
+                               "evidence_ids":sorted(set(d["evidence_ids"]+[evidence_id]))})
+        verify(new,"person")
+        if new==d:
+            return {"result":"unchanged",**receipt("person",p,d)}
+        model_store.write_model(ROOT,OWNER,new,replace=True)
+        return {"result":"alias recorded",**receipt("person",p,new)}
+
 def load_input(filename):
     def unique(pairs):
         d=dict(pairs)
@@ -178,6 +201,8 @@ def main():
     a=sub.add_parser("list"); a.add_argument("kind",choices=KINDS); a.add_argument("--account",required=True)
     a=sub.add_parser("set-lead-status"); a.add_argument("id"); a.add_argument("status",choices=sorted(STATUS))
     a.add_argument("--if-revision",required=True)
+    a=sub.add_parser("add-person-alias"); a.add_argument("id"); a.add_argument("alias")
+    a.add_argument("--if-revision",required=True); a.add_argument("--evidence-id",required=True)
     sub.add_parser("check")
     args=p.parse_args()
     if args.action=="add":
@@ -189,6 +214,8 @@ def main():
         result=[receipt(args.kind,p,d) for p,d in list_kind(args.kind) if d["account"]==args.account]
     elif args.action=="set-lead-status":
         result=change_status(args.id,args.status,args.if_revision)
+    elif args.action=="add-person-alias":
+        result=add_alias(args.id,args.alias,args.if_revision,args.evidence_id)
     else:
         result={}
         stored=models()
