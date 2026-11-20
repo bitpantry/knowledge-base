@@ -32,6 +32,8 @@ from pathlib import Path
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root / "core"))
 from update import MANIFEST, encode, local_files, manifest
+from model_store import initialize_labels
+initialize_labels(root)
 (root / MANIFEST).write_bytes(encode(manifest(sys.argv[2], local_files(root))))
 PYTHON
 printf 'Created vault at %s from %s\n' "$dest" "$revision"

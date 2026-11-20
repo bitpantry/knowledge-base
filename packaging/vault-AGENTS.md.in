@@ -4,7 +4,7 @@ Read [START-HERE.md](START-HERE.md), then the relevant [workflow](core/WORKFLOWS
 
 In extension mode edit only the selected extension subtree. Stop and route any core, entry point, test, example, or live data change to separate review.
 
-For source or concept work, follow [context-aware intake](core/CONCEPTS.md#intake-is-context-aware-by-default). When an authorized source intake fits an installed extension, follow its intake instructions before finishing: connect supported facts to existing records, preserve provenance, and leave uncertain links unresolved. The core stores model data and relationships; extensions do not open their own record stores. Ordinary vault use does not authorize changing the core implementation.
+For source or concept work, follow [context-aware intake](core/CONCEPTS.md#intake-is-context-aware-by-default). During authorized intake, seek supported connections to existing records, even when no extension has a source-specific workflow. Use the [core linking workflow](core/MODEL-STORE.md#link-knowledge-during-intake): check the vault’s relationship labels first, reuse one that fits, or define a new reusable one. Cite the source and leave uncertain links unresolved. The core stores model data and relationships; extensions do not open their own record stores. Ordinary vault use does not authorize changing the core implementation.
 
 For routine vault work, follow the documented architecture and use its existing entry points, record types, and source locators. If the task would require a new folder convention, locator, dependency, or other architecture change, explain the gap and get explicit approval to address it in the engineering repo. Do not improvise a workaround the next agent would have to discover.
 

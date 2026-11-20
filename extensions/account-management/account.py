@@ -105,73 +105,41 @@ def verify(d, kind, evidence=None, stored=None):
             require(eid in es,"unknown core evidence: "+eid)
             cite_evidence(ROOT,eid,es[eid])
 
-def scoped_evidence(d, evidence):
-    named=set(d["evidence_ids"])
-    sources=set(d["source_ids"])
-    return {eid:ev for eid,ev in evidence.items() if eid in named or ev["source_id"] in sources}
-
-def bound_speakers(d, bindings, evidence, stored):
-    require(isinstance(bindings,dict),"speaker_bindings must map exact source labels to participant IDs")
-    if not bindings:
-        return []
-    require(d["source_ids"] or d["evidence_ids"],"speaker bindings require a scoped source or selected evidence")
-    selected=scoped_evidence(d,evidence)
-    for label,pid in bindings.items():
-        text(label,"source speaker label")
-        token(pid,"bound person ID","person-")
-        require(pid in d["person_ids"],"bound speaker must be an existing participant")
-        require(one("person",pid,stored)[1]["account"]==d["account"],"bound speaker belongs to another account")
-        require(any(ev["locator"].get("speaker")==label for ev in selected.values()),
-                "exact speaker label not found in scoped evidence: "+label)
-    relationships=model_store.relationships(ROOT,d["account"])
-    edges=[]
-    for eid,ev in sorted(selected.items()):
-        pid=bindings.get(ev["locator"].get("speaker"))
-        if pid is None:
-            continue
-        cite_evidence(ROOT,eid,ev)
-        require(not any(edge["predicate"]=="said" and edge["to_id"]==eid and edge["from_id"]!=pid
-                        for edge in relationships.values()),"evidence already has a different speaker in this account: "+eid)
-        edges.append((pid,eid,ev["source_id"]))
-    return edges
-
 def digest(kind,d):
     return hashlib.sha256(encode(d).encode("utf-8")).hexdigest()
+
+def cite_source(sid):
+    path,source=lookup(ROOT,sid)
+    return {"source_id":sid,"note":path.relative_to(ROOT).as_posix(),"title":source["title"],
+            "date":source["date"],"pointer":source["pointer"]}
 
 def receipt(kind,p,d,trace=False):
     response={"kind":kind,"note":p.relative_to(ROOT).as_posix(),"revision":digest(kind,d),**d}
     if trace:
-        es=core_records(ROOT,"evidence") if d["evidence_ids"] or kind in {"interaction","person"} else {}
+        rid=d["id"]
+        links=[edge for _,edge in sorted(model_store.relationships(ROOT,d["account"]).items())
+               if rid in (edge["from_id"],edge["to_id"])]
+        es=core_records(ROOT,"evidence") if d["evidence_ids"] or any(edge["evidence_ids"] for edge in links) else {}
         verify(d,kind,es)
-        response["citations"]={
-            "source":[{"source_id":sid,"note":p.relative_to(ROOT).as_posix(),"title":s["title"],"pointer":s["pointer"]}
-                      for sid in d["source_ids"] for p,s in [lookup(ROOT,sid)]],
-            "evidence":[cite_evidence(ROOT,eid,es[eid]) for eid in d["evidence_ids"]]
-        }
-        if kind in {"interaction","person"}:
-            r=model_store.relationships(ROOT,d["account"])
-            scope=scoped_evidence(d,es) if kind=="interaction" else es
-            people=set(d.get("person_ids",[])) if kind=="interaction" else {d["id"]}
-            response["speaker_attributions"]=[{**edge,"citation":cite_evidence(ROOT,edge["to_id"],scope[edge["to_id"]])}
-                 for _,edge in sorted(r.items()) if edge["predicate"]=="said" and edge["from_id"] in people
-                 and edge["to_id"] in scope]
+        def citations(record):
+            return {"source":[cite_source(sid) for sid in record["source_ids"]],
+                    "evidence":[cite_evidence(ROOT,eid,es[eid]) for eid in record["evidence_ids"]]}
+        response["citations"]=citations(d)
+        response["relationships"]=[
+            {**edge,"direction":"both" if edge["from_id"]==edge["to_id"] else
+             ("outgoing" if edge["from_id"]==rid else "incoming"),"citations":citations(edge)}
+            for edge in links]
         if kind=="person":
             response["interactions"]=[{key:item[key] for key in ("id","date","title")}
-                for _,item in list_kind("interaction") if item["account"]==d["account"] and d["id"] in item["person_ids"]]
+                for _,item in list_kind("interaction") if item["account"]==d["account"] and rid in item["person_ids"]]
             response["interactions"].sort(key=lambda item:(item["date"],item["id"]),reverse=True)
     return response
 
 def submit(kind,data):
-    require(isinstance(data,dict),"record input must be an object")
-    data=dict(data)
-    require(kind=="interaction" or "speaker_bindings" not in data,"speaker_bindings is for interactions only")
-    bindings=data.pop("speaker_bindings",{})
     with write_lock(ROOT):
         d=normalize(kind,data)
         stored=models()
-        evidence=core_records(ROOT,"evidence") if d["evidence_ids"] or bindings else {}
-        verify(d,kind,evidence,stored)
-        edges=bound_speakers(d,bindings,evidence,stored)
+        verify(d,kind,stored=stored)
         p=model_store.path(ROOT,d["id"])
         status="already filed"
         if d["id"] in stored:
@@ -179,9 +147,7 @@ def submit(kind,data):
         else:
             model_store.write_model(ROOT,OWNER,d)
             status="filed"
-        for pid,eid,sid in edges:
-            model_store.write_relationship(ROOT,d["account"],pid,"said",eid,evidence_ids=[eid],source_ids=[sid])
-        return {"result":status,"speaker_bindings_resolved":len(edges),**receipt(kind,p,d)}
+        return {"result":status,**receipt(kind,p,d)}
 
 def change_status(rid,status,revision):
     with write_lock(ROOT):
@@ -199,7 +165,7 @@ def change_status(rid,status,revision):
 def load_input(filename):
     def unique(pairs):
         d=dict(pairs)
-        require(len(d)==len(pairs),"duplicate input field or speaker label")
+        require(len(d)==len(pairs),"duplicate input field")
         return d
     return json.loads(Path(filename).read_text(encoding="utf-8"),object_pairs_hook=unique)
 

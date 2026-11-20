@@ -33,3 +33,35 @@ The core Python interface is `model_store.py`; extension writers use
 lock. A model-specific command remains responsible for semantic validation.
 After a change, run `python3 -B core/model_store.py check` with the other core
 checks. Do not publish live records as part of an extension package.
+
+## Link knowledge during intake
+
+Use the same linking workflow for any applicable source. Read the source in
+context, look for existing records that it actually refers to, and identify
+what connection is supported. The relationship does not have to be listed
+in an extension, and the source does not need a dedicated intake command.
+
+1. Check the vault's reusable relationship labels before choosing a label:
+
+       python3 -B core/model_store.py labels
+
+   The list is stored in `knowledge/relationship-labels.md`. It starts empty.
+   Reuse an existing label if its definition and direction fit. Otherwise,
+   create a short, reusable label with a definition and direction in this
+   vault. Defining a label does not require a core or extension change.
+
+       python3 -B core/model_store.py define-label LABEL --definition "What the relationship means" --direction "From role → to role"
+
+2. Record each clear, useful link with the original source or the precise
+   evidence passage that supports it. Do not use a name match alone as proof
+   of identity or invent an attribution. Leave uncertain links unresolved.
+   Examples in model instructions are illustrative, not allowed-label lists.
+
+       python3 -B core/model_store.py link SCOPE FROM_ID LABEL TO_ID --evidence-id EVIDENCE_ID
+       python3 -B core/model_store.py links SCOPE RECORD_ID
+
+   Use `--source-id SOURCE_ID` for a source-level assertion such as a verified
+   byline; both provenance flags can be repeated. The core checks that the
+   label is defined, the references exist and model endpoints share the scope.
+   It does not decide whether the source semantically proves the link.
+   The label document and live edges are vault data, never replaced by updates.

@@ -31,6 +31,12 @@ class ModelStoreTests(unittest.TestCase):
             self.assertEqual(model_store.read_model(self.base,a["id"],"example"),a)
             with self.assertRaisesRegex(ValueError,"different extension"):
                 model_store.write_model(self.base,"another-owner",a)
+            self.assertEqual(model_store.labels(self.base),{})
+            with self.assertRaisesRegex(ValueError,"undefined relationship label"):
+                model_store.write_relationship(self.base,"one",a["id"],"relates-to",b["id"],source_ids=[self.source])
+            model_store.define_label(self.base,"relates-to","A supported connection between sample records","sample → sample")
+            with self.assertRaisesRegex(ValueError,"different meaning"):
+                model_store.define_label(self.base,"relates-to","A conflicting definition","sample → sample")
             with self.assertRaisesRegex(ValueError,"needs source"):
                 model_store.write_relationship(self.base,"one",a["id"],"relates-to",b["id"])
             with self.assertRaisesRegex(ValueError,"crosses account"):

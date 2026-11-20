@@ -4,4 +4,4 @@ Stable model ID: `interaction`. Owned by Relationships; `account.py` validates r
 
 Record ID starts with `interaction-`. Store the explicit account key, date, title, one or more existing same-account person IDs, optional concise notes, and optional source/evidence references. Do not record guessed dates or participants. If the original is already filed, link it rather than copying it.
 
-An exact source speaker label may be mapped to an existing same-account participant during intake. The core stores a separate, evidence-backed speaker relationship; an unbound or ambiguous speaker stays only on the source evidence and is not guessed.
+Use the core contextual linking workflow for supported connections beyond the Interaction's known participant IDs. Keep uncertain connections unresolved.

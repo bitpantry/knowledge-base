@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import sys
 
-from catalog import ROOT, clean_text, decode, publish_note, require
+from catalog import ROOT, clean_text, decode, publish_note, require, write_lock
 from concepts import ID, encode, keyed, read_record
 
 TOKEN = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
@@ -14,6 +14,9 @@ KEY = re.compile(r"[a-z][a-z0-9_]*\Z")
 REL = re.compile(r"rel-[a-f0-9]{24}\Z")
 SOURCE = re.compile(r"src-[a-f0-9]{24}\Z")
 MODEL_KEYS = {"id","type","account","title","notes"}
+LABELS = "relationship-labels.md"
+LABEL_HEADER = "# Relationship labels\n"
+LABEL_PATTERN = re.compile(r"\n## ([^\n]+)\n\nDefinition: ([^\n]+)\nDirection: ([^\n]+)\n")
 
 
 def token(value, label):
@@ -145,9 +148,65 @@ def source_exists(base,rid):
     require(decode(p)["source_id"]==rid,"source ID mismatch")
 
 
-def relation_data(base,account,from_id,predicate,to_id,evidence_ids,source_ids):
+def label_path(base):
+    p=folder(base)/LABELS
+    require(not p.is_symlink() and (not p.exists() or p.is_file()),"unsafe relationship labels document")
+    return p
+
+
+def label_data(label,definition,direction):
+    token(label,"relationship label")
+    return {"definition":clean_text(definition,"label definition",240),
+            "direction":clean_text(direction,"label direction",160)}
+
+
+def label_document(rows):
+    return LABEL_HEADER+"".join("\n## "+label+"\n\nDefinition: "+d["definition"]+
+                               "\nDirection: "+d["direction"]+"\n"
+                               for label,d in sorted(rows.items()))
+
+
+def labels(base):
+    p=label_path(base)
+    if not p.exists():
+        return {}
+    raw=p.read_bytes().decode("utf-8")
+    require(raw.startswith(LABEL_HEADER),"invalid relationship labels document")
+    rows={}
+    for label,definition,direction in LABEL_PATTERN.findall(raw[len(LABEL_HEADER):]):
+        require(label not in rows,"duplicate relationship label: "+label)
+        rows[label]=label_data(label,definition,direction)
+    require(raw==label_document(rows),"invalid relationship labels document")
+    return rows
+
+
+def initialize_labels(base):
+    p=label_path(base)
+    if not p.exists():
+        p.parent.mkdir(exist_ok=True,parents=True)
+        publish_note(p,LABEL_HEADER)
+    return p
+
+
+def define_label(base,label,definition,direction):
+    """Add a vault-local label. Caller holds the shared vault lock."""
+    row=label_data(label,definition,direction)
+    rows=labels(base)
+    if label in rows:
+        require(rows[label]==row,"relationship label already has a different meaning: "+label)
+        return {"label":label,**row}
+    p=label_path(base)
+    p.parent.mkdir(exist_ok=True,parents=True)
+    rows[label]=row
+    publish_note(p,label_document(rows),replace=p.exists())
+    return {"label":label,**row}
+
+
+def relation_data(base,account,from_id,predicate,to_id,evidence_ids,source_ids,known_labels=None):
     token(account,"relationship scope")
     token(predicate,"relationship predicate")
+    require(predicate in (labels(base) if known_labels is None else known_labels),
+            "undefined relationship label; check labels and define it if needed: "+predicate)
     es=references(evidence_ids,ID["evidence"],"relationship evidence ID")
     ss=references(source_ids,SOURCE,"relationship source ID")
     require(es or ss,"a relationship needs source or evidence provenance")
@@ -214,6 +273,7 @@ def relationships(base,account=None):
 
 
 def check(base):
+    known_labels=labels(base)
     parent=base/"extensions"
     require(not parent.is_symlink(),"unsafe extension directory")
     for ext in parent.iterdir() if parent.is_dir() else ():
@@ -224,17 +284,53 @@ def check(base):
     edges=relationships(base)
     for d in edges.values():
         require(relation_data(base,d["account"],d["from_id"],d["predicate"],d["to_id"],
-                              d["evidence_ids"],d["source_ids"])==d,"invalid relationship references")
+                              d["evidence_ids"],d["source_ids"],known_labels)==d,"invalid relationship references")
     return {"model_records":model_count,"relationships":len(edges)}
 
 
-if __name__=="__main__":
+def main():
     cli=argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("command",choices=["check"])
     cli.add_argument("--root",type=Path,default=ROOT)
-    args=cli.parse_args()
+    sub=cli.add_subparsers(dest="command",required=True)
+    sub.add_parser("check")
+    sub.add_parser("labels",help="read reusable relationship labels")
+    a=sub.add_parser("define-label",help="add a new label only if no existing meaning fits")
+    a.add_argument("label")
+    a.add_argument("--definition",required=True)
+    a.add_argument("--direction",required=True)
+    a=sub.add_parser("link",help="record a sourced relationship the agent identified")
+    for field in ("account","from_id","predicate","to_id"):
+        a.add_argument(field)
+    a.add_argument("--evidence-id",action="append",default=[])
+    a.add_argument("--source-id",action="append",default=[])
+    a=sub.add_parser("links",help="find relationships involving one ID in a scope")
+    a.add_argument("account")
+    a.add_argument("endpoint")
+    a=cli.parse_args()
+    base=a.root.resolve()
+    require(base.is_dir(),"vault root must exist")
+    if a.command=="check":
+        result=check(base)
+    elif a.command=="labels":
+        result=labels(base)
+    elif a.command=="define-label":
+        with write_lock(base):
+            result=define_label(base,a.label,a.definition,a.direction)
+    elif a.command=="link":
+        with write_lock(base):
+            p=write_relationship(base,a.account,a.from_id,a.predicate,a.to_id,
+                                 evidence_ids=a.evidence_id,source_ids=a.source_id)
+            _,result,_=parse(p)
+    else:
+        token(a.endpoint,"relationship endpoint")
+        result=[d for d in relationships(base,a.account).values()
+                if a.endpoint in (d["from_id"],d["to_id"])]
+    print(json.dumps(result,ensure_ascii=False,indent=2))
+
+
+if __name__=="__main__":
     try:
-        print(json.dumps(check(args.root.resolve()),indent=2))
+        main()
     except (ValueError,KeyError,OSError) as exc:
         print(str(exc),file=sys.stderr)
         sys.exit(2)
