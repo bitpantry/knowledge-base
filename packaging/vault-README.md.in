@@ -31,9 +31,9 @@ release needs no GitHub sign-in; private access uses an authenticated GitHub CLI
 
 Run the checks below and review the diff before committing. Do not run the
 updater concurrently with other edits or Git operations. If an update was
-interrupted, compare with a known good checkout before retrying. Release assets
-on this channel are for compatible core updates only; any data migration needs
-separate review and testing.
+interrupted, compare with a known good checkout before retrying. These are beta packages, not a backward-compatibility guarantee. Read the
+package notes before applying; any data conversion needs separate review and
+testing.
 
 ```sh
 python3 -B core/catalog.py check

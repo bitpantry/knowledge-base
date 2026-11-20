@@ -41,6 +41,16 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(self.call("cite",self.sid)["pointer"],self.fixture["pointer"])
         self.assertEqual(self.call("check"),{"sources":1,"problems":[]})
 
+    def test_title_only_in_body(self):
+        raw=self.note.read_text(encoding="utf-8")
+        _,header,body=raw.split("---\n",2)
+        self.assertNotIn("title: ",header)
+        self.assertEqual(body,"\n# "+self.fixture["title"]+"\n")
+        self.assertEqual(self.call("cite",self.sid)["title"],self.fixture["title"])
+        duplicate="title: "+json.dumps(self.fixture["title"])
+        self.note.write_text(raw.replace("\n---\n","\n"+duplicate+"\n---\n",1),encoding="utf-8")
+        self.assertIn("title belongs only in the body",self.call("cite",self.sid,expected=2))
+
     def test_concurrent_filing_and_interrupted_temp(self):
         fixture = self.candidate(native_id="concurrency-test")
         cmds = [sys.executable, str(SCRIPT), "--root", str(self.root), "file", str(fixture)]

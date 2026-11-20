@@ -15,7 +15,7 @@ import tempfile
 from urllib.parse import urlsplit, unquote
 
 ROOT = Path(__file__).resolve().parent.parent
-CORE_VERSION = "1.0.0"
+CORE_VERSION = "1.1.0-beta"
 FIELDS = {"source_id", "title", "kind", "native_id", "namespace", "date", "tags", "pointer", "capture", "fallback"}
 ID = re.compile(r"src-[0-9a-f]{24}\Z")
 KEY = re.compile(r"[a-z][a-z0-9_]*\Z")
@@ -89,24 +89,26 @@ def normalize(data):
     return out
 
 def render(data):
-    lines = ["---"] + [f"{key}: {json.dumps(val, ensure_ascii=False)}" for key,val in sorted(data.items())]
-    return "\n".join(lines + ["---", "", "# " + data["title"], "", "Metadata-only source catalog entry.", ""])
+    lines = ["---"] + [f"{key}: {json.dumps(val, ensure_ascii=False)}" for key,val in sorted(data.items()) if key != "title"]
+    return "\n".join(lines + ["---", "", "# " + data["title"], ""])
 
 def decode(path):
-    lines = path.read_text(encoding="utf-8").splitlines()
-    require(lines and lines[0] == "---", f"{path.name}: missing front matter")
+    raw = path.read_bytes().decode("utf-8")
+    parts = raw.split("---\n", 2)
+    require(len(parts) == 3 and not parts[0], f"{path.name}: missing front matter")
     data = {}
-    for line in lines[1:]:
-        if line == "---":
-            break
+    for line in parts[1].splitlines():
         key, sep, value = line.partition(":")
         require(sep and KEY.fullmatch(key) and key not in data, f"{path.name}: invalid/duplicate key {key}")
         data[key] = json.loads(value.strip())
-    else:
-        raise ValueError(f"{path.name}: unclosed front matter")
+    body = parts[2].split("\n")
+    require("title" not in data and len(body) == 3 and body[1].startswith("# "),
+            f"{path.name}: title belongs only in the body heading")
+    data["title"] = body[1][2:]
     data = normalize(data)
-    require(path.read_text(encoding="utf-8") == render(data), f"{path.name}: noncanonical entry or unexpected content")
+    require(raw == render(data), f"{path.name}: noncanonical entry or unexpected content")
     return data
+
 
 def list_records(base):
     catalog = base / "catalog"

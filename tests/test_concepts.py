@@ -101,53 +101,41 @@ class ConceptsTest(unittest.TestCase):
         self.assertEqual(self.run_cli(KB,"check"),{"concepts":1,"evidence":4,"decisions":3})
         self.assertFalse(self.run_cli(SOURCE,"check")["problems"])
 
-    def make_legacy(self, note, source, value, body_value=None):
-        p=self.root/note["note"]
-        _,header,_=p.read_text(encoding="utf-8").split("---\n",2)
-        raw=("---\n"+header+"value: "+json.dumps(value,ensure_ascii=False)+"\n---\n\n"
-             "# System A\n\n[Catalog source](../../catalog/"+source["source_id"]+".md)"
-             "\n\nEvidence at timestamp 00:03:15.\n\n[Concept](../concepts/"+self.con+".md)"
-             "\n\n"+(value if body_value is None else body_value)+"\n")
-        p.write_text(raw,encoding="utf-8")
-        return p
-
-    def test_value_once_and_legacy_migration_preserves_semantics(self):
-        self.c()
+    def test_compact_concept_and_evidence_store_values_once(self):
+        concept=self.c(context="A single description for this concept")
+        note=(self.root/concept["note"]).read_text(encoding="utf-8")
+        _,header,body=note.split("---\n",2)
+        self.assertEqual(body,"\n# System A\n\nA single description for this concept\n")
+        self.assertNotIn("name: ",header)
+        self.assertNotIn("context: ",header)
+        self.assertNotIn("\nid: ",header)
+        self.assertEqual(note.count(concept["id"]),1)
+        self.assertEqual(self.run_cli(KB,"find","System A")["concepts"][0]["context"],
+                         "A single description for this concept")
         src=self.src("Fictional Interview","2026-01-08","transcript")
         text="System A routes urgent requests via Québec"
-        chosen=self.claim(src,text)
-        p=self.root/chosen["note"]
-        new=p.read_text(encoding="utf-8")
-        _,header,body=new.split("---\n",2)
+        claim=self.claim(src,text)
+        p=self.root/claim["note"]
+        _,header,body=p.read_text(encoding="utf-8").split("---\n",2)
         self.assertNotIn("value: ",header)
         self.assertNotIn("00:03:15",body)
         self.assertEqual(body,"\n"+text+"\n")
-        self.choose("confirm","2026-01-12",self.view()["revision"],"--claim-id",chosen["id"])
-        before=self.view("answer","--trace")
-        cited=self.run_cli(KB,"cite",chosen["id"])
-        self.make_legacy(chosen,src,text)
-        legacy=p.read_bytes()
-        self.assertEqual(self.view("answer","--trace"),before)
-        self.assertEqual(self.run_cli(KB,"cite",chosen["id"]),cited)
-        self.assertEqual(self.claim(src,text)["status"],"already filed")
-        preview=self.run_cli(KB,"migrate-evidence")
-        self.assertEqual(preview["ids"],[chosen["id"]])
-        self.assertEqual(p.read_bytes(),legacy)
-        self.assertIn("stale migration",self.run_cli(KB,"migrate-evidence","--if-revision","wrong",expected=2))
-        self.assertEqual(p.read_bytes(),legacy)
-        self.assertEqual(self.run_cli(KB,"migrate-evidence","--if-revision",preview["revision"])["count"],1)
-        self.assertEqual(p.read_text(encoding="utf-8"),new)
-        self.assertEqual(self.view("answer","--trace"),before)
-        self.assertEqual(self.run_cli(KB,"migrate-evidence")["count"],0)
+        self.assertEqual(self.run_cli(KB,"cite",claim["id"])["value"],text)
 
-    def test_inconsistent_legacy_claim_stops(self):
-        self.c()
+    def test_reject_legacy_evidence_and_concept_headers(self):
+        concept=self.c()
         src=self.src("Fictional Interview","2026-01-08","transcript")
-        note=self.claim(src,"Header claim")
-        p=self.make_legacy(note,src,"Header claim",body_value="A different claim")
-        raw=p.read_bytes()
-        self.assertIn("noncanonical",self.run_cli(KB,"migrate-evidence",expected=2))
-        self.assertEqual(p.read_bytes(),raw)
+        claim=self.claim(src,"The claim belongs in the body")
+        p=self.root/claim["note"]
+        compact=p.read_text(encoding="utf-8")
+        p.write_text(compact.replace("\n---\n","\nvalue: \"The claim belongs in the body\"\n---\n",1),
+                     encoding="utf-8")
+        self.assertIn("only in the body",self.run_cli(KB,"cite",claim["id"],expected=2))
+        p.write_text(compact,encoding="utf-8")
+        p=self.root/concept["note"]
+        p.write_text(p.read_text(encoding="utf-8").replace("\n---\n","\nname: \"System A\"\n---\n",1),
+                     encoding="utf-8")
+        self.assertIn("duplicate concept metadata",self.run_cli(KB,"find","System A",expected=2))
 
     def test_acronym_ambiguity_and_prior_link_preserved(self):
         src=self.src("Fictional Notes","2026-01-01")

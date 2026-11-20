@@ -1,4 +1,4 @@
-# Concepts and evidence · V1.2
+# Concepts and evidence · Beta
 
 This layer connects precise passages across sources without copying documents or treating a reference as a current truth. It is part of the core. It does not create client, project, team, or account records.
 
@@ -12,32 +12,22 @@ This layer connects precise passages across sources without copying documents or
 
 The canonical additions live under `knowledge/concepts/`, `knowledge/evidence/`, and `knowledge/decisions/`. Evidence and decisions are append-only; exact repeats deduplicate by canonical hash. Concept IDs are chosen by the operator and are not derived from a title; choose account-neutral meaningful slugs. The existing `catalog/` remains authoritative for file identity and pointers. A source move won't break the evidence ID because it references the catalog ID. There is no migration of V1.0 source records.
 
-## Evidence note layout and upgrade
+## Note layout
 
-The evidence note header stores metadata: IDs and references, locator (including
-timestamps), and interpretation fields such as scope and question. A claim's
-text is stored once, as the Markdown body. A mention has metadata but no claim
-body. The CLI still accepts and returns `value` in JSON; it reconstructs that
-field from the body when reading. This changes serialization, not evidence
-identity, citations, or the content of a claim. A concept or decision note is
-unchanged by this release.
+Headers contain IDs, aliases, references, locators (including timestamps), and
+other structured metadata. A concept's name and context are stored once, in
+the body heading and description. Its header record ID is its concept ID.
+A claim's text is stored once in the body. A mention has no claim text and
+intentionally has an empty body. Decision notes keep structured decision
+metadata in the header and clickable references in the body.
 
-The reader also accepts the exact legacy layout with a header value and a
-generated reading view. Inconsistent header and body text is not silently
-repaired. Upgrading the core does not rewrite notes. To compact an existing
-vault, first back up its evidence records in approved storage outside the
-vault, and test on a copy. Then run:
-
-    python3 -B core/concepts.py migrate-evidence
-    python3 -B core/concepts.py migrate-evidence --if-revision REVISION_FROM_PREVIEW
-    python3 -B core/concepts.py check
-
-The first command is read-only. The second only reformats the previewed legacy
-evidence; source, concept, decision and interpretation records are untouched.
-No re-ingestion is needed. Older core readers cannot open the compact format.
-If interrupted, a new preview can handle a mixed vault; to revert to an older
-core, restore the evidence backup as well. Refresh any pending reconciliation
-preview that included a reformatted evidence file.
+The CLI still accepts and returns logical fields such as `name`, `context`,
+and `value` in JSON; it reads those fields from the body on disk. The beta reads
+only the current layout. For an existing vault using a previous layout, back up
+and convert a copy using its previous reader and the new writer before updating
+the live vault. Preserve record IDs, original wording, citations and decisions.
+Read the update notes before installing a beta package; core installation never
+rewrites live notes on its own.
 
 ## Intake is context-aware by default
 

@@ -1,6 +1,6 @@
-# Source catalog contract · v1
+# Source catalog contract · Beta
 
-The source of truth is one UTF-8 Markdown note in the live [catalog](../catalog/README.md) for each approved source. The filename is the stable source ID. Notes use LF, a YAML front matter block with JSON-valued fields and a fixed Markdown body. This is a deliberately narrow, deterministic subset, not arbitrary YAML. The CLI is the writer; a secondary index may be derived, never authoritative.
+The source of truth is one UTF-8 Markdown note in the live [catalog](../catalog/README.md) for each approved source. The filename is the stable source ID. Notes use LF, a YAML front matter block with JSON-valued fields and a Markdown body containing only the source title heading. The other fields live in front matter. This is a deliberately narrow, deterministic subset, not arbitrary YAML. The CLI is the writer; a secondary index may be derived, never authoritative.
 
 | Field | Meaning |
 | --- | --- |
@@ -15,8 +15,8 @@ The allowed `kind` values are `artifact` (ordinary file or document, including a
 
 A recovered pointer may change without changing provenance. It must resolve to the original identity; without authorized exact-match evidence the existing record stays put. The core does not store contents, excerpts, credentials, unsafe links, or project fields. Source-app permissions still apply. Extension models are separate from the core source catalog.
 
-Core CLI version: run the absolute or relative path to the tool with `--version`. The default catalog is relative to the tool location, not the shell’s working directory. Intake/observation paths work as normal shell-relative or absolute paths. A change to the canonical format requires separate review, a backed-up isolated migration test, and an explicit migration plan. Layout changes alone do not change this v1 record format.
+Core CLI version: run the absolute or relative path to the tool with `--version`. The default catalog is relative to the tool location, not the shell’s working directory. Intake/observation paths work as normal shell-relative or absolute paths. A change to the canonical format requires separate review, a backed-up isolated migration test, and an explicit migration plan. The beta reader requires the current layout; older notes must be converted separately.
 
 The citation receipt includes a revision hash of the exact canonical record. It is not stored in the note. Metadata corrections use that hash as a precondition; repair remains the separate path for changing the primary pointer.
 
-The additive [V1.1 concepts contract](CONCEPTS.md) references this catalog without changing its record format.
+The [concepts and evidence contract](CONCEPTS.md) references this catalog by stable source ID.

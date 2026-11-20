@@ -60,15 +60,15 @@ def render(d):
     t=d["record_type"]
     ref=f"../../catalog/{d['record_id']}.md" if t=="source" else f"../{FOLDERS[t]}/{d['record_id']}.md"
     model=f"../../extensions/{d['extension']}/{d['model']}"
-    meta=["---","interpretation_id: "+encode(rid)]+[k+": "+encode(v) for k,v in sorted(d.items())]+["---"]
-    return "\n".join([*meta,"",f"# {d['model_name']} · {d['extension']}","",d["reason"],"",
+    meta=["---","interpretation_id: "+encode(rid)]+[k+": "+encode(v) for k,v in sorted(d.items()) if k!="reason"]+["---"]
+    return "\n".join([*meta,"",d["reason"],"",
                     f"[Underlying {t}]({ref}) · [Model definition]({model})",""])
 
 def existing(base):
     rows={}
     for p in sorted(overlay_dir(base).glob("*.md")):
         require(not p.is_symlink() and ID.fullmatch(p.stem),"unexpected interpretation file: "+p.name)
-        raw=p.read_text(encoding="utf-8")
+        raw=p.read_bytes().decode("utf-8")
         front=raw.split("---\n",2)
         require(len(front)==3 and not front[0],"malformed interpretation: "+p.name)
         rows_raw=[s.split(": ",1) for s in front[1].splitlines()]
@@ -76,6 +76,9 @@ def existing(base):
         d={k:json.loads(v) for k,v in rows_raw}
         require(len(d)==len(rows_raw),"duplicate metadata")
         require(d.pop("interpretation_id",None)==p.stem,"mismatched interpretation ID")
+        body=front[2].split("\n")
+        require("reason" not in d and len(body)==5,"interpretation reason belongs only in the body")
+        d["reason"]=body[1]
         d=normalized_row(d)
         require(d["state"]=="match" and ident(d)==p.stem and raw==render(d),"noncanonical interpretation")
         rows[p.stem]=d

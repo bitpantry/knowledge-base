@@ -75,6 +75,12 @@ class ReconciliationTest(unittest.TestCase):
         self.assertFalse((self.root/"knowledge"/"interpretations").exists())
         result=self.apply(plan)
         self.assertEqual(len(result["written"]),2)
+        for p in (self.root/"knowledge"/"interpretations").glob("*.md"):
+            _,header,body=p.read_text(encoding="utf-8").split("---\n",2)
+            self.assertNotIn("reason: ",header)
+            self.assertEqual(body.count(a["reason"]),1)
+            self.assertIn("[Underlying concept]",body)
+            self.assertIn("[Model definition]",body)
         self.assertTrue(all(p.read_bytes()==v for p,v in baseline.items()))
         shown=self.run_cli(CLI,"list","concept",self.concept["id"])
         self.assertEqual({x["model_name"] for x in shown},{"Lead","Opportunity"})
