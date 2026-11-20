@@ -14,20 +14,24 @@ A private repository does not authorize sharing client material.
 
 ## Update the core
 
-From the vault folder, preview the latest published release from the eng base:
+From the vault folder, run these commands to **preview** a change:
 
 ```sh
-python3 -B core/update.py
-python3 -B core/update.py --apply --commit FULL_COMMIT_FROM_PREVIEW
+python3 -B core/vault.py install account-management
+python3 -B core/vault.py update account-management
+python3 -B core/vault.py update
 ```
 
-Preview does not write to the vault. Apply updates only verified shared files:
-`core/`, `AGENTS.md`, `CLAUDE.md`, and the bundled source-recovery example.
-The installed revision and file fingerprints live in `.core-release.json`;
-track that file if the vault uses Git. Local changes to shared files block
-the update rather than being overwritten. Keep live records, installed
-extensions, settings, `README.md`, and `START-HERE.md` as they are. A public
-release needs no GitHub sign-in; private access uses an authenticated GitHub CLI.
+Add `--if-preview TOKEN_FROM_PREVIEW` to the same command to apply.
+A general update includes the core and only package-managed extensions already
+installed. Installing an extension adds its entry link to `START-HERE.md`.
+It never classifies existing records; an agent proposes matches separately using
+the [reconciliation workflow](core/RECONCILE.md).
+
+The manager verifies the shipped files against the package receipts and stops
+on local edits. It does not replace live records, settings, or custom docs.
+The core receipt is `.core-release.json`; extension receipts live in their
+extension folders. Track receipts if you track the vault in Git.
 
 Run the checks below and review the diff before committing. Do not run the
 updater concurrently with other edits or Git operations. If an update was

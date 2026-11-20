@@ -1,5 +1,6 @@
 /tests export-ignore
-/extensions/tool-loans export-ignore
+/extensions/* export-ignore
+/extensions/README.md -export-ignore
 /examples/README.md export-ignore
 /examples/CONCEPTS.md export-ignore
 /.gitattributes export-ignore

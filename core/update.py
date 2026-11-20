@@ -72,36 +72,48 @@ def local_files(root):
     return {name: local_path(root, name).read_bytes() for name in names if (root / name).exists()}
 
 
-def release_bytes():
+def release_index():
     url = "https://api.github.com/repos/" + REPO + "/releases/latest"
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "knowledge-vault-updater"})
+    with urllib.request.urlopen(req, timeout=20) as response:
+        raw = response.read(LIMIT + 1)
+    if len(raw) > LIMIT:
+        raise ValueError("GitHub release metadata is too large")
+    release = json.loads(raw)
+    if release["draft"] or release["prerelease"] or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", release["tag_name"]):
+        raise ValueError("not a published vault package")
+    return release
+
+
+def release_asset(release, filename):
+    assets = [a for a in release["assets"] if a["name"] == filename]
+    if len(assets) != 1 or assets[0]["size"] > LIMIT:
+        raise ValueError(f"latest published beta does not include a unique package: {filename}")
+    asset = assets[0]
+    tag = release["tag_name"]
+    expected = f"https://github.com/{REPO}/releases/download/{tag}/{filename}"
+    if asset["browser_download_url"] != expected:
+        raise ValueError("unexpected package URL")
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "knowledge-vault-updater"})
-        with urllib.request.urlopen(req, timeout=20) as response:
-            release = json.loads(response.read(LIMIT + 1))
-        assets = [a for a in release["assets"] if a["name"] == ASSET]
-        if release["draft"] or release["prerelease"] or len(assets) != 1:
-            raise ValueError("the latest published release has no unique core asset")
-        asset = assets[0]
-        expected = f"https://github.com/{REPO}/releases/download/{release['tag_name']}/{ASSET}"
-        if asset["browser_download_url"] != expected:
-            raise ValueError("unexpected core asset URL")
         with urllib.request.urlopen(expected, timeout=20) as response:
             raw = response.read(LIMIT + 1)
-        if asset.get("digest") and asset["digest"] != "sha256:" + digest(raw):
-            raise ValueError("GitHub asset digest does not match")
-        return raw
-    except urllib.error.HTTPError as exc:
-        if exc.code not in (401, 403, 404):
-            raise
+    except (urllib.error.URLError, TimeoutError):
         if not shutil.which("gh"):
-            raise ValueError("release not publicly accessible; install and sign in to GitHub CLI for private access") from exc
+            raise
         with tempfile.TemporaryDirectory(prefix="km-release-") as tmp:
-            out = Path(tmp) / ASSET
-            subprocess.run(["gh", "release", "download", "--repo", REPO,
-                            "--pattern", ASSET, "--output", str(out)], check=True, timeout=60)
+            out = Path(tmp) / filename
+            subprocess.run(["gh", "release", "download", tag, "--repo", REPO,
+                            "--pattern", filename, "--output", str(out)], check=True, timeout=60)
             if out.stat().st_size > LIMIT:
-                raise ValueError("core release asset is too large")
-            return out.read_bytes()
+                raise ValueError("package too large")
+            raw = out.read_bytes()
+    if len(raw) != asset["size"] or asset.get("digest") and asset["digest"] != "sha256:" + digest(raw):
+        raise ValueError("GitHub package size or digest does not match")
+    return raw
+
+
+def release_bytes():
+    return release_asset(release_index(), ASSET)
 
 
 def unbundle(raw):

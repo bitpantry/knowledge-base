@@ -12,15 +12,19 @@ HEADING = "## Extensions"
 NEXT = "## For a fresh agent"
 LINK = re.compile(r"- \[([^\]\n]+)\]\(([^)\n]+)\)")
 
+def extension_title(text):
+    title = next((s for s in text.splitlines() if s.strip()), "")
+    require(re.fullmatch(r"# [^\[\]\\<>]{1,80}",title) and title == title.rstrip(),
+            "EXTENSION.md must start with a short plain Markdown H1 title.")
+    return title[2:]
+
+
 def attached_path(base, slug):
     require(SLUG.fullmatch(slug), "Use the existing lowercase extension folder name.")
     path = base / "extensions" / slug / "EXTENSION.md"
     require(path.is_file() and not any(p.is_symlink() for p in (path, path.parent, path.parent.parent)),
             "No copied extension with a regular EXTENSION.md in this vault.")
-    title = next((s for s in path.read_text(encoding="utf-8").splitlines() if s.strip()), "")
-    require(re.fullmatch(r"# [^\[\]\\<>]{1,80}",title) and title == title.rstrip(),
-            "EXTENSION.md must start with a short plain Markdown H1 title.")
-    return title[2:],path.relative_to(base).as_posix()
+    return extension_title(path.read_text(encoding="utf-8")),path.relative_to(base).as_posix()
 
 def revise(base, text, name, destination):
     rows = text.splitlines(keepends=True)
@@ -34,6 +38,11 @@ def revise(base, text, name, destination):
         return "".join(rows)
     lower=positions[0]+1
     upper=next((i for i in range(lower,len(rows)) if rows[i].startswith(("## ","# "))),len(rows))
+    placeholder = re.compile(r"No extensions are wired by default\.|No extensions are installed\.(?: Add an? [A-Za-z0-9 -]+ extension only when explicitly approved\.)?")
+    for i in reversed(range(lower,upper)):
+        if placeholder.fullmatch(rows[i].rstrip("\r\n")):
+            del rows[i]
+            upper-=1
     folder=destination.rsplit("/",1)[0]+"/"
     matches=[]
     for i in range(lower,upper):

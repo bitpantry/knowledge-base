@@ -43,3 +43,14 @@ that commit. The installed updater reads published releases, not untagged
 changes on `main`. Beta packages may change the note format. Call out incompatible changes in the
 package notes, and review live data conversions separately before upgrading. A release is not permission
 to sync or publish any vault's records.
+
+Package each supported extension separately from the same committed revision:
+
+```sh
+python3 -B packaging/extension-release.py account-management "$TEMP_DIR"
+```
+
+Attach its ZIP beside the core ZIP. Include current packages for all managed
+extensions in a beta deployment. New vaults still start with no installed
+extensions. `core/vault.py` installs packages, wires their entry links, and
+previews updates; it leaves matching to the agent and the existing review workflow.

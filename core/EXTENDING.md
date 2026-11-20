@@ -27,10 +27,21 @@ When the user explicitly says “wire it up,” verify the copied folder and rea
     python3 -B core/wire_extension.py <folder-name>
     python3 -B core/catalog.py check
 
-This puts exactly one short, named relative link to the extension's own entry document in the Extensions section of START-HERE.md. It repairs stale or duplicate links for that folder, leaves unrelated entries intact, and does nothing when already correct. If a broken link is no longer recognizable as belonging to that extension, or its name belongs to another existing entry, stop and review rather than guessing. This is a narrowly scoped, explicitly authorized start-page edit, not permission to rewrite core or bypass the extension diff guard. Do not add a second registry, installer, versioning step, or duplicated workflow; fix any obsolete “no extensions” wording if it actually conflicts with the new state.
+This puts exactly one short, named relative link to the extension's own entry document in the Extensions section of START-HERE.md. It repairs stale or duplicate links for that folder, leaves unrelated entries intact, and does nothing when already correct. If a broken link is no longer recognizable as belonging to that extension, or its name belongs to another existing entry, stop and review rather than guessing. This is a narrowly scoped, explicitly authorized start-page edit, not permission to rewrite core or bypass the extension diff guard. Do not add a second registry, extension-specific installer, compatibility matrix, or duplicated workflow; fix any obsolete “no extensions” wording if it actually conflicts with the new state.
 
 Design for quick orientation: wire only the extension name and link at the normal entry point. Keep purpose, prerequisites, safe defaults, write boundaries, and a first-use workflow on the extension's own page or linked module. Make behavior discoverable and bounded; a fresh agent should be able to use it from the vault page without a separate explanation.
 
 ## Install and optionally reconcile
 
-“Install <extension>” uses the same workflow for every copied folder: wire it, assess in-scope prior knowledge against its model definitions, preview candidate counts and ambiguity/overlap, then ask whether to apply. [Reconciliation](RECONCILE.md) writes only after explicit approval. Neither drop-in use nor a bare wire-up runs this assessment or mutates prior knowledge. For reconciliation, preview how existing core records may fit the extension's own model definitions, and record only approved clear matches. Report ambiguities and nonexclusive overlaps first. An interpretation is a core-owned reference, not a new extension record; an extension cannot overwrite or claim exclusive ownership of the source note. This separately authorized action does not relax the extension code scope guard.
+For a published package, preview `python3 -B core/vault.py install <extension>`,
+then apply only the approved preview with `--if-preview`. This copies the package,
+records which files it manages, and uses the same start-page wiring rules above.
+A manually copied extension remains usable without a package receipt; the
+package manager does not silently adopt it.
+
+The package command does **not** classify records. As a separate step, an agent
+reads the extension's model definitions and evaluates prior knowledge in the
+user's scope. Follow [reconciliation](RECONCILE.md) to preview possible matches,
+ambiguity, and overlap, and record only separately approved matches.
+An interpretation is a core-owned reference, not a new extension record; an
+extension cannot overwrite or claim exclusive ownership of the source note.

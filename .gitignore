@@ -12,3 +12,6 @@ __pycache__/
 !/catalog/README.md
 /knowledge/*
 !/knowledge/README.md
+
+# Never commit extension-owned live records to the public engineering base.
+/extensions/*/records/
