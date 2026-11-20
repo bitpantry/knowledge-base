@@ -151,6 +151,74 @@ class AccountManagementTest(unittest.TestCase):
         self.assertEqual(mt["citations"]["evidence"][0]["source_id"],src["source_id"])
         self.assertEqual(rt["relationships"][0]["citations"]["evidence"][0]["locator"]["value"],"example-01")
 
+    def test_org_chart_groups_sources_and_refreshes_without_canonical_output_ingestion(self):
+        folder=self.root/"core"
+        def source(native):
+            return self.write(folder/"catalog.py","file",d={
+                "kind":"artifact","namespace":"fictional-test","native_id":native,
+                "title":native,"date":"2026-11-20","pointer":"https://example.invalid/"+native,
+                "capture":"approved"})["source_id"]
+        one,two=source("meeting"),source("follow-up")
+        people={k:self.write(self.cli,"add","person",d=self.record("person",id="person-"+k,title=v))
+                for k,v in {"river":"River [Finch]","jordan":"Jordan Birch","sam":"Sam Pine",
+                            "avery":"Avery Ash","blair":"Blair Oak","terry":"Terry Elm"}.items()}
+        scope=people["river"]["account"]
+        def link(a,b,src=one):
+            return self.invoke(self.cli,"link-reporting",scope,people[a]["id"],people[b]["id"],"--source-id",src)
+        link("river","jordan")
+        self.assertFalse((self.root/"views").exists())
+        out=self.root/self.invoke(self.cli,"rebuild-org-chart")["view"]
+        self.assertTrue(out.is_file())
+        self.assertIn("account-management/Org%20Chart.md",(self.root/"views/README.md").read_text())
+        link("river","jordan",two)
+        line=next(line for line in out.read_text().splitlines() if "person-river.md" in line)
+        self.assertTrue(line.startswith("  - "))
+        self.assertIn("River",line)
+        self.assertIn(one,line); self.assertIn(two,line)
+        self.assertEqual(out.read_text().count("person-river.md"),1)
+        link("river","sam"); link("avery","blair"); link("blair","avery")
+        body=out.read_text()
+        self.assertIn("conflicting manager claims",body)
+        self.assertIn("cycle in manager claims",body)
+        self.assertIn("person-terry.md) — manager not recorded",body)
+        self.assertIn("River \\[Finch\\]",body)
+        self.write(self.cli,"add","person",d=self.record("person",id="person-post",title="Later Person"))
+        self.assertIn("Later Person",out.read_text())
+        (self.root/"catalog/README.md").write_text("# Test catalog")
+        (self.root/"examples").mkdir()
+        (self.root/"examples/recovery-observation.json").write_text("{}")
+        (self.root/"views/ignored.md").write_text("[MUST NOT BE INDEXED](absent.md)")
+        proc=subprocess.run([sys.executable,"-B",str(folder/"catalog.py"),"check"],cwd=self.root,capture_output=True,text=True)
+        self.assertEqual(proc.returncode,0,proc.stdout+proc.stderr)
+        self.assertFalse(self.invoke(folder/"concepts.py","find","MUST NOT BE INDEXED")["evidence"])
+
+    def test_view_contract_rejects_wrong_owner_escaping_collisions_and_symlinks(self):
+        module=self.root/"core"
+        script=r"""
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+import views
+base=Path.cwd()
+def reject(owner,name):
+    try: views.output(base,owner,name)
+    except ValueError: return
+    raise AssertionError((owner,name))
+reject('account-management','../outside.md')
+reject('account-management','../../other/Org Chart.md')
+reject('different-extension','Org Chart.md')
+declare=base/'extensions/account-management/VIEWS.md'
+original=declare.read_text()
+declare.write_text(original+'- org chart.md\n')
+reject('account-management','Org Chart.md')
+declare.write_text(original)
+(base/'views').symlink_to(base/'extensions',target_is_directory=True)
+reject('account-management','Org Chart.md')
+"""
+        p=subprocess.run([sys.executable,"-B","-c",script,str(module)],cwd=self.root,
+                         text=True,capture_output=True)
+        self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+
     def test_reject_unknown_cross_account_or_conflicting_reference(self):
         self.write(self.cli,"add","person",d=self.record("person"))
         self.write(self.cli,"add","interaction",d=self.record("interaction"))

@@ -253,7 +253,11 @@ def check(base):
         seen[key] = path.name
         if path.stem != key:
             problems.append(f"{path.name}: filename must equal {key}")
-    for path in base.rglob("*.md"):
+    # Do not even traverse the top-level generated view tree.
+    files = (p for head in base.iterdir() if head.name != "views"
+             for p in (head.rglob("*.md") if head.is_dir() and not head.is_symlink()
+                       else (head,) if head.suffix == ".md" else ()))
+    for path in files:
         if any(x.startswith(".") or x in {"local","intake","archive","__pycache__"}
                for x in path.relative_to(base).parts) or path.is_symlink():
             continue

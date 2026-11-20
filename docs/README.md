@@ -39,3 +39,5 @@ For changes, start with the [source workflow](../core/WORKFLOWS.md), [concept wo
 ## Applying new models to prior knowledge
 
 An explicit install request uses one shared core workflow: wire the folder, assess prior records in the user's stated scope against the new extension's model definitions, and ask whether to apply the preview. No per-extension installer or one-scope-per-vault rule is required. The preview distinguishes proposed matches, ambiguity, and overlaps with other interpretations; only approved clear matches become local core-owned Markdown links. A single underlying record may support several independent namespaces without source duplication or reclassification. See the [reconciliation workflow](../core/RECONCILE.md). Bare wire-up does not perform reconciliation.
+
+[Generated views](../core/VIEWS.md) are human-facing projections, kept out of ordinary retrieval. The core guards output ownership; the extension owns domain rendering.

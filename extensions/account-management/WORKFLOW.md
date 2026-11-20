@@ -10,10 +10,7 @@ The extension only defines its model fields and the meaning of its own Person an
 
 **Reporting lines.** For an explicit, unambiguous statement such as “River reports to Jordan,” resolve both names to their existing in-scope Person IDs, file the statement as an attributable source and precise evidence, then write `reports-to` from the direct report to the manager. This includes a direct user statement: cite the message by stable ID and link where available, noting that it is user-supplied, not independently verified. Check existing links first. Do not infer reporting from title, a common team, or project coordination. Use one direction, not a second inverse label. If new evidence conflicts with an existing direct manager, preserve both source claims and surface the disagreement; do not silently overwrite or pick a current manager. Do not make unverified links look confirmed.
 
-    python3 -B core/model_store.py labels
-    # Only if not already registered:
-    python3 -B core/model_store.py define-label reports-to --definition "A person's direct organizational reporting line to their manager." --direction "Direct report to manager"
-    python3 -B core/model_store.py link ACCOUNT REPORT_PERSON_ID reports-to MANAGER_PERSON_ID --evidence-id EVIDENCE_ID
+    python3 -B extensions/account-management/account.py link-reporting ACCOUNT REPORT_PERSON_ID MANAGER_PERSON_ID --evidence-id EVIDENCE_ID
 
 For other relationships, reuse the vault's matching label or define a reusable one under the core workflow. These examples are not an exhaustive vocabulary.
 
@@ -40,3 +37,11 @@ From the vault root:
 A traced record returns its own exact core source and evidence references, including the precise locator when captured. To inspect a related interaction's evidence, trace the interaction separately. Core records remain authoritative for source claims and confirmations. Model prose appears once in the core-owned Markdown body; IDs, scope, dates, status, and references stay in front matter. Lead status changes require the current revision so a stale read cannot replace a newer status. Back up the vault’s live knowledge separately from the extension package.
 
 Installation and the optional retrospective preview use the core's shared workflow. An approved interpretation is a reference from prior core knowledge to a model, not a new person, interaction, or lead. Capture actual model records only when the user requests that work.
+
+## Generated org chart
+
+Open `views/README.md` in Obsidian or your Markdown viewer, then choose Org Chart. To create the view initially or rebuild it after a bulk import or other low-level edit, run:
+
+    python3 -B extensions/account-management/account.py rebuild-org-chart
+
+Once that view exists, supported Person additions, alias changes and the extension's `link-reporting` command refresh it. Raw core writes do not execute extension code. If a command reports a view warning, its canonical write succeeded; correct the issue and rebuild. Rebuilding writes only derived Markdown. There is no scheduler or sync task. Do not maintain the chart by hand, or treat an unknown manager, conflicting claims or cycles as a confirmed hierarchy.

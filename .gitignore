@@ -15,3 +15,6 @@ __pycache__/
 
 # Never commit extension-owned live records to the public engineering base.
 /extensions/*/records/
+
+# Generated views are rebuildable and may expose live information.
+/views/

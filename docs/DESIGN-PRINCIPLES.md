@@ -14,3 +14,5 @@ today and what remains a design direction.
 8. **Separate engineering from use.** Keep tests, demos, and design notes in the engineering repo. Ship a clean working vault. Review core updates separately and preserve live records, settings, and installed extensions.
 
 **Beta compatibility policy.** Use one current on-disk layout. Do not retain backward-format readers or permanent migration commands unless the owner explicitly changes this policy. Beta deployment packages are not a compatibility promise. When a live vault needs an upgrade, test a separate, backed-up conversion and preserve record identity and content.
+
+**Generated views.** A derived view can make the canonical graph readable by people without creating a second source of truth or adding routine agent context. Keep it reproducible, namespaced, and separate from canonical retrieval.

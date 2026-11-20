@@ -45,3 +45,5 @@ user's scope. Follow [reconciliation](RECONCILE.md) to preview possible matches,
 ambiguity, and overlap, and record only separately approved matches.
 An interpretation is a core-owned reference, not a new extension record; an
 extension cannot overwrite or claim exclusive ownership of the source note.
+
+For optional human-facing outputs, follow the [generated views contract](VIEWS.md). These outputs are not an extension-owned knowledge store.

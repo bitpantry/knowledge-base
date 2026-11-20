@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Account Management model validation and workflows over the core record store."""
 import argparse
-from datetime import date
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +15,7 @@ sys.path.insert(0,str(ROOT/"core"))
 from catalog import clean_text, lookup, require, write_lock
 from concepts import cite_evidence, encode, records as core_records
 import model_store
+import org_chart
 
 OWNER="account-management"
 KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
@@ -144,6 +145,36 @@ def receipt(kind,p,d,trace=False):
             response["interactions"].sort(key=lambda item:(item["date"],item["id"]),reverse=True)
     return response
 
+def refresh_chart(initialize=False):
+    people={rid:d for rid,d in models().items() if d["type"]=="person"}
+    stamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return org_chart.refresh(ROOT,people,stamp,initialize=initialize)
+
+def refresh_after_write(result):
+    # The canonical write has already succeeded. Do not hide that result when
+    # the optional, derived view needs manual recovery.
+    try:
+        p=refresh_chart()
+        if p is not None:
+            result["view"]=p.relative_to(ROOT).as_posix()
+    except (OSError,ValueError,KeyError) as exc:
+        result["view_warning"]="Canonical write complete; chart refresh failed: "+str(exc)
+    return result
+
+def link_reporting(account,report,manager,evidence_ids,source_ids):
+    with write_lock(ROOT):
+        require(report!=manager,"a person cannot report to themself")
+        for rid in (report,manager):
+            require(one("person",rid)[1]["account"]==account,"person belongs to another account scope")
+        require(evidence_ids or source_ids,"a reporting claim needs evidence or a source")
+        known=model_store.labels(ROOT)
+        if "reports-to" not in known:
+            model_store.relation_data(ROOT,account,report,"reports-to",manager,evidence_ids,source_ids,{**known,"reports-to":None})
+            model_store.define_label(ROOT,"reports-to","A person's direct organizational reporting line to their manager.","Direct report to manager")
+        p=model_store.write_relationship(ROOT,account,report,"reports-to",manager,evidence_ids=evidence_ids,source_ids=source_ids)
+        _,result,_=model_store.parse(p)
+        return refresh_after_write(result)
+
 def submit(kind,data):
     with write_lock(ROOT):
         d=normalize(kind,data)
@@ -156,7 +187,8 @@ def submit(kind,data):
         else:
             model_store.write_model(ROOT,OWNER,d)
             status="filed"
-        return {"result":status,**receipt(kind,p,d)}
+        result={"result":status,**receipt(kind,p,d)}
+        return refresh_after_write(result) if kind=="person" else result
 
 def change_status(rid,status,revision):
     with write_lock(ROOT):
@@ -181,9 +213,9 @@ def add_alias(rid,alias,revision,evidence_id):
                                "evidence_ids":sorted(set(d["evidence_ids"]+[evidence_id]))})
         verify(new,"person")
         if new==d:
-            return {"result":"unchanged",**receipt("person",p,d)}
+            return refresh_after_write({"result":"unchanged",**receipt("person",p,d)})
         model_store.write_model(ROOT,OWNER,new,replace=True)
-        return {"result":"alias recorded",**receipt("person",p,new)}
+        return refresh_after_write({"result":"alias recorded",**receipt("person",p,new)})
 
 def load_input(filename):
     def unique(pairs):
@@ -203,6 +235,12 @@ def main():
     a.add_argument("--if-revision",required=True)
     a=sub.add_parser("add-person-alias"); a.add_argument("id"); a.add_argument("alias")
     a.add_argument("--if-revision",required=True); a.add_argument("--evidence-id",required=True)
+    a=sub.add_parser("link-reporting")
+    for field in ("account","report","manager"):
+        a.add_argument(field)
+    a.add_argument("--evidence-id",action="append",default=[])
+    a.add_argument("--source-id",action="append",default=[])
+    sub.add_parser("rebuild-org-chart")
     sub.add_parser("check")
     args=p.parse_args()
     if args.action=="add":
@@ -216,6 +254,11 @@ def main():
         result=change_status(args.id,args.status,args.if_revision)
     elif args.action=="add-person-alias":
         result=add_alias(args.id,args.alias,args.if_revision,args.evidence_id)
+    elif args.action=="link-reporting":
+        result=link_reporting(args.account,args.report,args.manager,args.evidence_id,args.source_id)
+    elif args.action=="rebuild-org-chart":
+        with write_lock(ROOT):
+            result={"view":refresh_chart(initialize=True).relative_to(ROOT).as_posix()}
     else:
         result={}
         stored=models()

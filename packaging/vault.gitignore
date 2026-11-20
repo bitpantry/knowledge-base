@@ -9,3 +9,6 @@ __pycache__/
 /.catalog.lock
 
 # Track approved catalog, knowledge, and extension records.
+
+# Generated human-facing views; rebuild from approved canonical records.
+/views/

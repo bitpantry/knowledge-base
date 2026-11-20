@@ -22,6 +22,8 @@ Use this vault the same way for research notes, a home project, community or vol
 
 **Keep ordinary lookup scoped.** If present, the `docs/` folder is for architecture and maintenance. Do not read it during startup, or include it in ordinary knowledge search, ingestion, indexing, or answers, even when using a broad file search. Use the catalog, knowledge records, and any relevant extension-owned records for ordinary work. Open `docs/` only when the user asks for architecture or maintenance documentation, or explicitly asks to include it.
 
+Generated `views/` are for people, not routine agent lookup or indexing. Rebuild from canonical records rather than editing generated pages.
+
 Run the local checks (Python 3.9+):
 ```sh
 python3 -B core/catalog.py check
