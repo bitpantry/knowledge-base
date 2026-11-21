@@ -171,12 +171,19 @@ class AccountManagementTest(unittest.TestCase):
         self.assertTrue(out.is_file())
         self.assertIn("account-management/Org%20Chart.md",(self.root/"views/README.md").read_text())
         link("river","jordan",two)
-        line=next(line for line in out.read_text().splitlines() if "person-river.md" in line)
-        self.assertTrue(line.startswith("Open a Person note: "))
-        self.assertIn("River",line)
-        self.assertNotIn(one,line); self.assertNotIn(two,line)
-        self.assertNotIn("People and evidence",out.read_text())
-        self.assertEqual(out.read_text().count("person-river.md"),1)
+        roster=out.with_name("People.md")
+        roster_body=roster.read_text()
+        self.assertIn("account-management/People.md",(self.root/"views/README.md").read_text())
+        self.assertEqual(out.read_text().count("[People](People.md)"),1)
+        self.assertNotIn("person-river.md",out.read_text())
+        self.assertNotIn("# Org Chart",out.read_text())
+        self.assertNotIn(f"## {scope}",out.read_text())
+        self.assertNotIn("Arrows run",out.read_text())
+        self.assertNotIn(one,roster_body); self.assertNotIn(two,roster_body)
+        self.assertNotIn("# People",roster_body)
+        self.assertIn("[Org Chart](Org%20Chart.md)",roster_body)
+        self.assertEqual(roster_body.count("person-river.md"),1)
+        self.assertLess(roster_body.index("Avery Ash"),roster_body.index("Terry Elm"))
         graph=out.read_text().split("```mermaid",1)[1].split("```",1)[0]
         self.assertIn("flowchart TD",graph)
         self.assertEqual(graph.count("n_person_jordan --> n_person_river"),1)
@@ -186,7 +193,7 @@ class AccountManagementTest(unittest.TestCase):
         body=out.read_text()
         self.assertIn("conflicting manager claims",body)
         self.assertIn("circular manager claims",body)
-        self.assertIn("[Terry Elm](../../knowledge/records/person-terry.md)",body)
+        self.assertIn("[Terry Elm](../../knowledge/records/person-terry.md)",roster_body)
         self.assertNotIn("manager not recorded",body)
         graph=body.split("```mermaid",1)[1].split("```",1)[0]
         self.assertNotIn("-->",graph)
@@ -205,6 +212,7 @@ class AccountManagementTest(unittest.TestCase):
         self.assertIn("River \\[Finch\\]",body)
         self.write(self.cli,"add","person",d=self.record("person",id="person-post",title="Later Person"))
         self.assertIn("Later Person",out.read_text())
+        self.assertIn("[Later Person](../../knowledge/records/person-post.md)",roster.read_text())
         (self.root/"catalog/README.md").write_text("# Test catalog")
         (self.root/"examples").mkdir()
         (self.root/"examples/recovery-observation.json").write_text("{}")
@@ -212,6 +220,46 @@ class AccountManagementTest(unittest.TestCase):
         proc=subprocess.run([sys.executable,"-B",str(folder/"catalog.py"),"check"],cwd=self.root,capture_output=True,text=True)
         self.assertEqual(proc.returncode,0,proc.stdout+proc.stderr)
         self.assertFalse(self.invoke(folder/"concepts.py","find","MUST NOT BE INDEXED")["evidence"])
+
+    def test_sourced_profile_revision_and_derived_roster(self):
+        src=self.write(self.root/"core/catalog.py","file",d={
+            "kind":"artifact","namespace":"synthetic","native_id":"official-directory",
+            "title":"Official fictional directory","date":"2026-11-20",
+            "pointer":"https://example.invalid/official","capture":"approved"})
+        proof={"source_ids":[src["source_id"]]}
+        manager=self.write(self.cli,"add","person",d=self.record("person",id="person-manager",title="Jordan Birch"))
+        old=self.record("person",title="River Finch")
+        person=self.write(self.cli,"add","person",d=old)
+        view=self.root/self.invoke(self.cli,"rebuild-org-chart")["view"]
+        roster=view.with_name("People.md")
+        patch=self.root/"profile.json"
+        patch.write_text(json.dumps({"organization":"Birch Workshop","business_unit":"Field Operations",
+                                     "job_title":"Operations Lead","work_phone":"+1 555 012 0199",
+                                     "work_email":"river@example.invalid","priority":"High",**proof}))
+        updated=self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",person["revision"])
+        self.assertIn("stale",self.invoke(self.cli,"revise-person",person["id"],patch,
+                                              "--if-revision",person["revision"],code=2))
+        self.invoke(self.cli,"link-reporting",person["account"],person["id"],manager["id"],
+                    "--source-id",src["source_id"])
+        self.write(self.cli,"add","interaction",d=self.record("interaction", title="Documented call",**proof))
+        trace=self.invoke(self.cli,"show","person",person["id"],"--trace")
+        self.assertEqual(trace["manager"]["id"],manager["id"])
+        self.assertEqual(trace["last_recorded_contact"],"2026-11-20")
+        self.assertEqual(updated["source_ids"],proof["source_ids"])
+        body=roster.read_text()
+        for shown in ("Operations Lead","Field Operations","Priority: High","Reports to Jordan Birch",
+                      "Last recorded contact: 2026-11-20"):
+            self.assertIn(shown,body)
+        for hidden in ("river@example.invalid", "555 012",src["source_id"]):
+            self.assertNotIn(hidden,body)
+        patch.write_text(json.dumps({"business_unit":None,**proof}))
+        removed=self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",trace["revision"])
+        self.assertNotIn("business_unit",removed)
+        self.assertNotIn("Field Operations",roster.read_text())
+        self.assertEqual(removed["source_ids"],proof["source_ids"])
+        patch.write_text(json.dumps({"job_title":"Unsupported claim"}))
+        self.assertIn("require a source",self.invoke(self.cli,"revise-person",person["id"],patch,
+                                                         "--if-revision",removed["revision"],code=2))
 
     def test_view_contract_rejects_wrong_owner_escaping_collisions_and_symlinks(self):
         module=self.root/"core"

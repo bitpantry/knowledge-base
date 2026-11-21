@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from urllib.parse import urlsplit
 
 BASE=Path(__file__).resolve().parent
 ROOT=BASE.parents[1]
@@ -21,8 +22,11 @@ OWNER="account-management"
 KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
 SLUG=r"[a-z0-9]+(?:-[a-z0-9]+)*"
 STATUS={"open","qualifying","closed"}
+PERSON_WORK = {"organization", "business_unit", "job_title", "work_email", "work_phone", "linkedin_url"}
+PERSON_RELATIONSHIP = {"relationship_owner", "relationship_status", "priority", "strategic_value"}
+PERSON_FIELDS = PERSON_WORK | PERSON_RELATIONSHIP
 KEYS={
-    "person":{"id","account","title","notes","source_ids","evidence_ids","aliases"},
+    "person":{"id","account","title","notes","source_ids","evidence_ids","aliases"} | PERSON_FIELDS,
     "interaction":{"id","account","title","notes","source_ids","evidence_ids","date","person_ids"},
     "lead":{"id","account","title","notes","source_ids","evidence_ids","person_ids","interaction_ids","status"},
 }
@@ -62,6 +66,23 @@ def normalize(kind,d):
     normalized["notes"]=notes
     for field,patt in [("source_ids",r"src-[0-9a-f]{24}"),("evidence_ids",r"ev-[0-9a-f]{24}")]:
         normalized[field]=ids(d.get(field,[]),field,patt)
+    if kind=="person":
+        if PERSON_FIELDS & d.keys():
+            require(normalized["source_ids"] or normalized["evidence_ids"],
+                    "populated Person profile needs an approved source or evidence reference")
+        for field in PERSON_FIELDS & d.keys():
+            text(d[field],field,500 if field=="strategic_value" else 250)
+        if "work_email" in d:
+            require(re.fullmatch(r"[^\s@<>]+@[^\s@<>.]+(?:\.[^\s@<>.]+)+",d["work_email"]) is not None,
+                    "invalid work email")
+        if "work_phone" in d:
+            require(len(re.findall(r"[0-9]",d["work_phone"]))>=7 and len(d["work_phone"])<=60,
+                    "invalid work phone")
+        if "linkedin_url" in d:
+            target=urlsplit(d["linkedin_url"])
+            require(target.scheme=="https" and target.netloc.lower() in {"linkedin.com","www.linkedin.com"}
+                    and re.fullmatch(r"/in/[A-Za-z0-9_%.-]+/?",target.path) and not target.query and not target.fragment,
+                    "use a clean HTTPS LinkedIn profile URL")
     if kind=="person" and "aliases" in d:
         aliases=d["aliases"]
         require(isinstance(aliases,list) and bool(aliases),"aliases must be a nonempty list")
@@ -143,12 +164,25 @@ def receipt(kind,p,d,trace=False):
             response["interactions"]=[{key:item[key] for key in ("id","date","title")}
                 for _,item in list_kind("interaction") if item["account"]==d["account"] and rid in item["person_ids"]]
             response["interactions"].sort(key=lambda item:(item["date"],item["id"]),reverse=True)
+            if response["interactions"]:
+                response["last_recorded_contact"]=response["interactions"][0]["date"]
+            scoped={pid:p for _,p in list_kind("person") if p["account"]==d["account"] for pid in [p["id"]]}
+            grouped,conflicts,parents,cycles=org_chart.reporting(ROOT,d["account"],scoped)
+            if rid in conflicts or rid in cycles:
+                response["reporting_exception"]={"reason":"conflicting manager claims" if rid in conflicts else "circular manager claims",
+                    "recorded_managers":[{"id":mid,"title":scoped[mid]["title"]} for mid in sorted(grouped[rid])]}
+            elif rid in parents:
+                response["manager"]={"id":parents[rid],"title":scoped[parents[rid]]["title"]}
+            reports=[{"id":pid,"title":scoped[pid]["title"]} for pid in sorted(parents) if parents[pid]==rid and pid not in cycles]
+            if reports: response["direct_reports"]=reports
     return response
 
 def refresh_chart(initialize=False):
-    people={rid:d for rid,d in models().items() if d["type"]=="person"}
+    stored=models()
+    people={rid:d for rid,d in stored.items() if d["type"]=="person"}
+    interactions=[d for d in stored.values() if d["type"]=="interaction"]
     stamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    return org_chart.refresh(ROOT,people,stamp,initialize=initialize)
+    return org_chart.refresh(ROOT,people,interactions,stamp,initialize=initialize)
 
 def refresh_after_write(result):
     # The canonical write has already succeeded. Do not hide that result when
@@ -158,7 +192,7 @@ def refresh_after_write(result):
         if p is not None:
             result["view"]=p.relative_to(ROOT).as_posix()
     except (OSError,ValueError,KeyError) as exc:
-        result["view_warning"]="Canonical write complete; chart refresh failed: "+str(exc)
+        result["view_warning"]="Canonical write complete; People views refresh failed: "+str(exc)
     return result
 
 def link_reporting(account,report,manager,evidence_ids,source_ids):
@@ -188,7 +222,7 @@ def submit(kind,data):
             model_store.write_model(ROOT,OWNER,d)
             status="filed"
         result={"result":status,**receipt(kind,p,d)}
-        return refresh_after_write(result) if kind=="person" else result
+        return refresh_after_write(result) if kind in {"person","interaction"} else result
 
 def change_status(rid,status,revision):
     with write_lock(ROOT):
@@ -217,6 +251,33 @@ def add_alias(rid,alias,revision,evidence_id):
         model_store.write_model(ROOT,OWNER,new,replace=True)
         return refresh_after_write({"result":"alias recorded",**receipt("person",p,new)})
 
+def revise_person(rid,patch,revision):
+    with write_lock(ROOT):
+        p,d=one("person",rid)
+        require(revision==digest("person",d),"stale person revision; read current record")
+        mutable=PERSON_FIELDS | {"title","notes"}
+        proof={"source_ids","evidence_ids"}
+        require(isinstance(patch,dict) and patch.keys() <= mutable|proof
+                and patch.keys() & mutable,"invalid person profile patch")
+        new={**d}
+        for key in patch.keys() & mutable:
+            if patch[key] is None and key in PERSON_FIELDS:
+                new.pop(key,None)
+            else:
+                new[key]=patch[key]
+        for key,pattern in (("source_ids",r"src-[0-9a-f]{24}"),("evidence_ids",r"ev-[0-9a-f]{24}")):
+            new[key]=sorted(set(d[key]+ids(patch.get(key,[]),key,pattern)))
+        require(patch.get("source_ids") or patch.get("evidence_ids"),
+                "profile revisions require a source or evidence reference for the reviewed change")
+        new=normalize("person",new)
+        verify(new,"person")
+        result="unchanged"
+        if new!=d:
+            model_store.write_model(ROOT,OWNER,new,replace=True)
+            result="profile revised"
+        return refresh_after_write({"result":result,**receipt("person",p,new)})
+
+
 def load_input(filename):
     def unique(pairs):
         d=dict(pairs)
@@ -235,6 +296,8 @@ def main():
     a.add_argument("--if-revision",required=True)
     a=sub.add_parser("add-person-alias"); a.add_argument("id"); a.add_argument("alias")
     a.add_argument("--if-revision",required=True); a.add_argument("--evidence-id",required=True)
+    a=sub.add_parser("revise-person"); a.add_argument("id"); a.add_argument("input")
+    a.add_argument("--if-revision",required=True)
     a=sub.add_parser("link-reporting")
     for field in ("account","report","manager"):
         a.add_argument(field)
@@ -254,6 +317,8 @@ def main():
         result=change_status(args.id,args.status,args.if_revision)
     elif args.action=="add-person-alias":
         result=add_alias(args.id,args.alias,args.if_revision,args.evidence_id)
+    elif args.action=="revise-person":
+        result=revise_person(args.id,load_input(args.input),args.if_revision)
     elif args.action=="link-reporting":
         result=link_reporting(args.account,args.report,args.manager,args.evidence_id,args.source_id)
     elif args.action=="rebuild-org-chart":
