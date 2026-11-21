@@ -235,7 +235,8 @@ class AccountManagementTest(unittest.TestCase):
         patch=self.root/"profile.json"
         patch.write_text(json.dumps({"organization":"Birch Workshop","business_unit":"Field Operations",
                                      "job_title":"Operations Lead","work_phone":"+1 555 012 0199",
-                                     "work_email":"river@example.invalid","priority":"High",**proof}))
+                                     "work_email":"river@example.invalid","priority":"H","relationship_temperature":0,
+                                     "relationship_temperature_rationale":"New contact",**proof}))
         updated=self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",person["revision"])
         self.assertIn("stale",self.invoke(self.cli,"revise-person",person["id"],patch,
                                               "--if-revision",person["revision"],code=2))
@@ -246,9 +247,16 @@ class AccountManagementTest(unittest.TestCase):
         self.assertEqual(trace["manager"]["id"],manager["id"])
         self.assertEqual(trace["last_recorded_contact"],"2026-11-20")
         self.assertEqual(updated["source_ids"],proof["source_ids"])
+        self.assertEqual(trace["relationship_temperature"],0)
+        unsafe=self.write(self.cli,"add","person",d=self.record("person",id="person-escaped-table",title="Able | Finch"))
+        table=roster.read_text()
+        self.assertIn("[Able &#124; Finch](../../knowledge/records/person-escaped-table.md) |  |  |  |  |  |  |  |",table)
+        self.assertLess(table.index("Able &#124; Finch"),table.index("Jordan Birch"))
+        for rejected in ({"relationship_temperature":4},{"relationship_temperature":False},{"priority":"High"}):
+            patch.write_text(json.dumps({**rejected,**proof}))
+            self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",trace["revision"],code=2)
         body=roster.read_text()
-        for shown in ("Operations Lead","Field Operations","Priority: High","Reports to Jordan Birch",
-                      "Last recorded contact: 2026-11-20"):
+        for shown in ("Operations Lead","Field Operations","| Jordan Birch |","| 0 | H | 2026-11-20 |"):
             self.assertIn(shown,body)
         for hidden in ("river@example.invalid", "555 012",src["source_id"]):
             self.assertNotIn(hidden,body)

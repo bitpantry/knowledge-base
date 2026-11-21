@@ -93,19 +93,23 @@ def render_people(base, people, interactions, refreshed):
             lines += [f"## {label(account)}", ""]
         scoped = {rid:p for rid,p in people.items() if p["account"] == account}
         _,_,parents,cycles=reporting(base,account,scoped)
+        lines += ["| Name | Role | Organization / unit | Manager | Relationship owner | Relationship temperature | Priority | Last recorded contact |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        def cell(value):
+            return label(value).replace("|","&#124;")
         for rid, person in sorted(scoped.items(), key=lambda pair: (pair[1]["title"].casefold(), pair[0])):
             aliases = person.get("aliases") or []
-            alias_text = " (" + ", ".join(label(a) for a in aliases) + ")" if aliases else ""
-            details = [label(person[key]) for key in ("job_title","organization","business_unit") if key in person]
-            if rid in parents and rid not in cycles:
-                details.append("Reports to " + label(scoped[parents[rid]]["title"]))
-            if (account,rid) in last:
-                details.append("Last recorded contact: " + last[account,rid])
-            for key, prefix in (("relationship_owner","Owner: "),("relationship_status","Relationship: "),("priority","Priority: ")):
-                if key in person:
-                    details.append(prefix + label(person[key]))
-            suffix = " · " + " · ".join(details) if details else ""
-            lines.append(f"- [{label(person['title'])}](../../knowledge/records/{rid}.md){alias_text}{suffix}")
+            alias_text = " (" + ", ".join(cell(a) for a in aliases) + ")" if aliases else ""
+            name = f"[{cell(person['title'])}](../../knowledge/records/{rid}.md){alias_text}"
+            manager = cell(scoped[parents[rid]]["title"]) if rid in parents and rid not in cycles else ""
+            score = person.get("relationship_temperature")
+            temp = (f"{score:+d}" if score else "0") if score is not None else ""
+            unit = " / ".join(cell(person[key]) for key in ("organization","business_unit") if key in person)
+            row = [name,cell(person.get("job_title","")),unit,manager,
+                   cell(person.get("relationship_owner","")),temp,
+                   cell(person.get("priority","")) if person.get("priority") in {"H","M","L"} else "",
+                   last.get((account,rid),"")]
+            lines.append("| " + " | ".join(row) + " |")
         lines.append("")
     if not people:
         lines.append("No people recorded.")

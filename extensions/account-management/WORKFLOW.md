@@ -40,7 +40,7 @@ Installation and the optional retrospective preview use the core's shared workfl
 
 ## Generated org chart
 
-Open `views/README.md` in Obsidian and choose Org Chart or People. In Reading view the chart shows manager-to-report arrows, omitting disputed and circular arrows and listing their exceptions. Its People link opens the searchable alphabetical roster; each name opens the exact canonical Person note. Known aliases appear only in the roster. Empty details are not filled in, and evidence is not copied into either view. The filenames provide titles when Obsidian's inline title is enabled. To create or rebuild both views, run:
+Open `views/README.md` in Obsidian and choose Org Chart or People. In Reading view the chart shows manager-to-report arrows, omitting disputed and circular arrows and listing their exceptions. Its People link opens the searchable alphabetical roster table; each name opens the exact canonical Person note. Known aliases appear only in the roster. Empty table cells are unknown, never implicitly neutral (0), and evidence is not copied into either view. The filenames provide titles when Obsidian's inline title is enabled. To create or rebuild both views, run:
 
     python3 -B extensions/account-management/account.py rebuild-org-chart
 

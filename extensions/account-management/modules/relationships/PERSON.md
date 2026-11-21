@@ -12,7 +12,7 @@ Store an explicitly supported alternate name as an optional `aliases` list, not 
 ## Optional verified profile properties
 
 - Work: `organization`, `business_unit`, `job_title`, `work_email`, `work_phone`, `linkedin_url` (clean HTTPS public profile link). Do not collect private contact details or publish work contact details in the shared roster.
-- This account’s relationship: `relationship_owner`, `relationship_status`, `priority`, `strategic_value`. These are attributable user/team judgments, not facts inferred from job title. Keep them within the record’s account scope. Use the account’s own wording and omit unassigned values.
+- This account’s relationship: `relationship_owner`, `relationship_temperature` (integer −3 to +3; 0 is neutral), optional `relationship_temperature_rationale`, `priority` (H/M/L), `strategic_value`. These are attributable user/team judgments, not facts inferred from job title. Keep them within the record’s account scope. Omit unassigned values. Older free-text relationship status and priority remain readable in the Person record; the roster does not coerce them, and new writes use the typed fields.
 
 Properties are optional and empty/unknown values should be omitted. Profile values render as Obsidian Properties; the note body remains display name and optional readable notes. Reporting, direct reports and last recorded contact are derived from sourced reporting edges and documented interactions, not editable fields. A real exchange can support last recorded contact; an invite or mention cannot. The Person trace exposes these summaries and citations. No archival workflow is provided; preserve historical records rather than deleting them to change the roster.
 

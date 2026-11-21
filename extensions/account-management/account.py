@@ -23,7 +23,7 @@ KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
 SLUG=r"[a-z0-9]+(?:-[a-z0-9]+)*"
 STATUS={"open","qualifying","closed"}
 PERSON_WORK = {"organization", "business_unit", "job_title", "work_email", "work_phone", "linkedin_url"}
-PERSON_RELATIONSHIP = {"relationship_owner", "relationship_status", "priority", "strategic_value"}
+PERSON_RELATIONSHIP = {"relationship_owner", "relationship_status", "relationship_temperature", "relationship_temperature_rationale", "priority", "strategic_value"}
 PERSON_FIELDS = PERSON_WORK | PERSON_RELATIONSHIP
 KEYS={
     "person":{"id","account","title","notes","source_ids","evidence_ids","aliases"} | PERSON_FIELDS,
@@ -70,7 +70,12 @@ def normalize(kind,d):
         if PERSON_FIELDS & d.keys():
             require(normalized["source_ids"] or normalized["evidence_ids"],
                     "populated Person profile needs an approved source or evidence reference")
-        for field in PERSON_FIELDS & d.keys():
+        if "relationship_temperature" in d:
+            score=d["relationship_temperature"]
+            require(type(score) is int and -3<=score<=3,"relationship temperature must be an integer from -3 to +3")
+        require("relationship_temperature_rationale" not in d or "relationship_temperature" in d,
+                "relationship temperature rationale requires a score")
+        for field in (PERSON_FIELDS - {"relationship_temperature"}) & d.keys():
             text(d[field],field,500 if field=="strategic_value" else 250)
         if "work_email" in d:
             require(re.fullmatch(r"[^\s@<>]+@[^\s@<>.]+(?:\.[^\s@<>.]+)+",d["work_email"]) is not None,
@@ -211,6 +216,8 @@ def link_reporting(account,report,manager,evidence_ids,source_ids):
 
 def submit(kind,data):
     with write_lock(ROOT):
+        if kind=="person" and isinstance(data,dict):
+            verify_new_person_fields(data)
         d=normalize(kind,data)
         stored=models()
         verify(d,kind,stored=stored)
@@ -251,6 +258,14 @@ def add_alias(rid,alias,revision,evidence_id):
         model_store.write_model(ROOT,OWNER,new,replace=True)
         return refresh_after_write({"result":"alias recorded",**receipt("person",p,new)})
 
+def verify_new_person_fields(changes):
+    require("relationship_status" not in changes or changes["relationship_status"] is None,
+            "relationship_status is legacy; use relationship_temperature and optional rationale")
+    if "priority" in changes and changes["priority"] is not None:
+        require(type(changes["priority"]) is str and changes["priority"] in {"H","M","L"},
+                "priority must be H, M, or L")
+
+
 def revise_person(rid,patch,revision):
     with write_lock(ROOT):
         p,d=one("person",rid)
@@ -259,6 +274,7 @@ def revise_person(rid,patch,revision):
         proof={"source_ids","evidence_ids"}
         require(isinstance(patch,dict) and patch.keys() <= mutable|proof
                 and patch.keys() & mutable,"invalid person profile patch")
+        verify_new_person_fields(patch)
         new={**d}
         for key in patch.keys() & mutable:
             if patch[key] is None and key in PERSON_FIELDS:
