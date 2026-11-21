@@ -19,16 +19,19 @@ import model_store
 import org_chart
 
 OWNER="account-management"
-KINDS={"person":"people", "interaction":"interactions", "lead":"leads"}
+KINDS={"person":"people", "interaction":"interactions", "lead":"leads", "followup":"followups"}
 SLUG=r"[a-z0-9]+(?:-[a-z0-9]+)*"
 STATUS={"open","qualifying","closed"}
 PERSON_WORK = {"organization", "business_unit", "job_title", "work_email", "work_phone", "linkedin_url"}
 PERSON_RELATIONSHIP = {"relationship_owner", "relationship_status", "relationship_temperature", "relationship_temperature_rationale", "priority", "strategic_value"}
-PERSON_FIELDS = PERSON_WORK | PERSON_RELATIONSHIP
+PERSON_FIELDS = PERSON_WORK | PERSON_RELATIONSHIP | {"archived_on", "opportunity_relevance"}
+INTERACTION_KINDS = {"meeting", "call", "email", "transcript", "other"}
+FOLLOWUP_STATUS = {"open", "done", "declined"}
 KEYS={
     "person":{"id","account","title","notes","source_ids","evidence_ids","aliases"} | PERSON_FIELDS,
-    "interaction":{"id","account","title","notes","source_ids","evidence_ids","date","person_ids"},
+    "interaction":{"id","account","title","notes","source_ids","evidence_ids","date","person_ids","interaction_kind","internal_attendees","discussion_points","signals"},
     "lead":{"id","account","title","notes","source_ids","evidence_ids","person_ids","interaction_ids","status"},
+    "followup":{"id","account","title","notes","source_ids","evidence_ids","person_ids","interaction_id","owner_name","due","status"},
 }
 
 def text(v,label,limit=200):
@@ -53,7 +56,7 @@ def ids(v,name,pattern):
     return sorted(v)
 
 def normalize(kind,d):
-    required={"id","account","title"}|({"date","person_ids"} if kind=="interaction" else set())
+    required={"id","account","title"}|({"date","person_ids"} if kind=="interaction" else {"person_ids"} if kind=="followup" else set())
     require(isinstance(d,dict) and required<=set(d)<=KEYS[kind]|{"type"},"missing or unexpected "+kind+" fields")
     require(d.get("type",kind)==kind,"record type does not match model")
     normalized={**d,"type":kind}
@@ -97,11 +100,34 @@ def normalize(kind,d):
         require(len(set(folded))==len(folded) and d["title"].casefold() not in folded,
                 "duplicate alias or display name")
         normalized["aliases"]=sorted(aliases,key=str.casefold)
-    if kind in {"interaction","lead"}:
+    if kind=="person" and "archived_on" in d:
+        exact_date(d["archived_on"])
+    if kind in {"interaction","lead","followup"}:
         normalized["person_ids"]=ids(d.get("person_ids",[]),"person IDs","person-"+SLUG)
     if kind=="interaction":
         require(normalized["person_ids"],"link at least one known, in-scope person before recording an interaction")
         exact_date(d["date"])
+        if "interaction_kind" in d:
+            require(d["interaction_kind"] in INTERACTION_KINDS,"invalid interaction kind")
+        for field in ("internal_attendees","discussion_points","signals"):
+            if field in d:
+                values=d[field]
+                require(isinstance(values,list) and bool(values),"expected a nonempty list: "+field)
+                for value in values:
+                    text(value,field,500)
+    elif kind=="followup":
+        require(normalized["person_ids"],"follow-up needs an in-scope person")
+        require(d.get("interaction_id") or normalized["source_ids"] or normalized["evidence_ids"],
+                "follow-up needs an interaction, source or evidence")
+        if "interaction_id" in d:
+            token(d["interaction_id"],"interaction ID","interaction-")
+        if "due" in d:
+            exact_date(d["due"])
+        if "owner_name" in d:
+            text(d["owner_name"],"owner")
+        status=d.get("status","open")
+        require(status in FOLLOWUP_STATUS,"invalid follow-up status")
+        normalized["status"]=status
     elif kind=="lead":
         normalized["interaction_ids"]=ids(d.get("interaction_ids",[]),"interaction IDs","interaction-"+SLUG)
         status=d.get("status","open")
@@ -130,9 +156,15 @@ def list_kind(kind,stored=None):
 
 def verify(d, kind, evidence=None, stored=None):
     for pid in d.get("person_ids",[]):
-        require(one("person",pid,stored)[1]["account"]==d["account"],"person belongs to another account scope: "+pid)
+        person=one("person",pid,stored)[1]
+        require(person["account"]==d["account"],"person belongs to another account scope: "+pid)
     for iid in d.get("interaction_ids",[]):
         require(one("interaction",iid,stored)[1]["account"]==d["account"],"interaction belongs to another account scope: "+iid)
+    if kind=="followup" and "interaction_id" in d:
+        meeting=one("interaction",d["interaction_id"],stored)[1]
+        require(meeting["account"]==d["account"],"interaction belongs to another account scope")
+        require(meeting["source_ids"] or meeting["evidence_ids"] or d["source_ids"] or d["evidence_ids"],
+                "follow-up needs a sourced interaction or an independent source")
     for sid in d["source_ids"]:
         lookup(ROOT,sid)
     if d["evidence_ids"]:
@@ -165,7 +197,12 @@ def receipt(kind,p,d,trace=False):
             {**edge,"direction":"both" if edge["from_id"]==edge["to_id"] else
              ("outgoing" if edge["from_id"]==rid else "incoming"),"citations":citations(edge)}
             for edge in links]
+        if kind=="followup" and "interaction_id" in d:
+            interaction_path,interaction=one("interaction",d["interaction_id"])
+            response["source_interaction"]=receipt("interaction",interaction_path,interaction,trace=True)
         if kind=="person":
+            response["followups"]=[{key:item[key] for key in ("id","title","status","due","owner_name") if key in item}
+                for _,item in list_kind("followup") if item["account"]==d["account"] and rid in item["person_ids"]]
             response["interactions"]=[{key:item[key] for key in ("id","date","title")}
                 for _,item in list_kind("interaction") if item["account"]==d["account"] and rid in item["person_ids"]]
             response["interactions"].sort(key=lambda item:(item["date"],item["id"]),reverse=True)
@@ -186,8 +223,9 @@ def refresh_chart(initialize=False):
     stored=models()
     people={rid:d for rid,d in stored.items() if d["type"]=="person"}
     interactions=[d for d in stored.values() if d["type"]=="interaction"]
+    followups=[d for d in stored.values() if d["type"]=="followup"]
     stamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    return org_chart.refresh(ROOT,people,interactions,stamp,initialize=initialize)
+    return org_chart.refresh(ROOT,people,interactions,followups,stamp,initialize=initialize)
 
 def refresh_after_write(result):
     # The canonical write has already succeeded. Do not hide that result when
@@ -223,26 +261,31 @@ def submit(kind,data):
         verify(d,kind,stored=stored)
         p=model_store.path(ROOT,d["id"])
         status="already filed"
+        if kind=="followup" and d["status"]=="open":
+            require(any("archived_on" not in stored[pid] for pid in d["person_ids"]), "open follow-up needs an active person")
         if d["id"] in stored:
             require(stored[d["id"]]==d,"ID already exists with different contents")
         else:
             model_store.write_model(ROOT,OWNER,d)
             status="filed"
         result={"result":status,**receipt(kind,p,d)}
-        return refresh_after_write(result) if kind in {"person","interaction"} else result
+        return refresh_after_write(result) if kind in {"person","interaction","followup"} else result
 
-def change_status(rid,status,revision):
+def change_status(rid,status,revision,kind="lead"):
     with write_lock(ROOT):
         stored=models()
-        p,d=one("lead",rid,stored)
-        verify(d,"lead",stored=stored)
-        require(revision==digest("lead",d),"stale lead revision; read current record")
+        p,d=one(kind,rid,stored)
+        verify(d,kind,stored=stored)
+        require(revision==digest(kind,d),"stale "+kind+" revision; read current record")
         if d["status"]==status:
-            return {"result":"unchanged",**receipt("lead",p,d)}
+            return {"result":"unchanged",**receipt(kind,p,d)}
+        if kind=="followup" and status=="open":
+            require(any("archived_on" not in stored[pid] for pid in d["person_ids"]), "open follow-up needs an active person")
         new={**d,"status":status}
-        require(one("lead",rid)[1]==d,"lead changed while editing; review and retry")
+        require(one(kind,rid)[1]==d,kind+" changed while editing; review and retry")
         model_store.write_model(ROOT,OWNER,new,replace=True)
-        return {"result":"status changed",**receipt("lead",p,new)}
+        result={"result":"status changed",**receipt(kind,p,new)}
+        return refresh_after_write(result) if kind=="followup" else result
 
 def add_alias(rid,alias,revision,evidence_id):
     with write_lock(ROOT):
@@ -286,6 +329,12 @@ def revise_person(rid,patch,revision):
         require(patch.get("source_ids") or patch.get("evidence_ids"),
                 "profile revisions require a source or evidence reference for the reviewed change")
         new=normalize("person",new)
+        if "archived_on" in patch and patch["archived_on"] is not None:
+            stored=models()
+            for _, item in list_kind("followup",stored):
+                if item["status"]=="open" and rid in item["person_ids"]:
+                    require(any(pid!=rid and "archived_on" not in stored[pid] for pid in item["person_ids"]),
+                            "resolve or reassign the open follow-up before archiving its last active person")
         verify(new,"person")
         result="unchanged"
         if new!=d:
@@ -310,6 +359,8 @@ def main():
     a=sub.add_parser("list"); a.add_argument("kind",choices=KINDS); a.add_argument("--account",required=True)
     a=sub.add_parser("set-lead-status"); a.add_argument("id"); a.add_argument("status",choices=sorted(STATUS))
     a.add_argument("--if-revision",required=True)
+    a=sub.add_parser("set-followup-status"); a.add_argument("id"); a.add_argument("status",choices=sorted(FOLLOWUP_STATUS))
+    a.add_argument("--if-revision",required=True)
     a=sub.add_parser("add-person-alias"); a.add_argument("id"); a.add_argument("alias")
     a.add_argument("--if-revision",required=True); a.add_argument("--evidence-id",required=True)
     a=sub.add_parser("revise-person"); a.add_argument("id"); a.add_argument("input")
@@ -331,6 +382,8 @@ def main():
         result=[receipt(args.kind,p,d) for p,d in list_kind(args.kind) if d["account"]==args.account]
     elif args.action=="set-lead-status":
         result=change_status(args.id,args.status,args.if_revision)
+    elif args.action=="set-followup-status":
+        result=change_status(args.id,args.status,args.if_revision,"followup")
     elif args.action=="add-person-alias":
         result=add_alias(args.id,args.alias,args.if_revision,args.evidence_id)
     elif args.action=="revise-person":

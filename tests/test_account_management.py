@@ -63,7 +63,7 @@ class AccountManagementTest(unittest.TestCase):
         updated=self.invoke(self.cli,"set-lead-status",lead["id"],"qualifying","--if-revision",lead["revision"])
         self.assertEqual(updated["status"],"qualifying")
         self.assertIn("stale",self.invoke(self.cli,"set-lead-status",lead["id"],"closed","--if-revision",lead["revision"],code=2))
-        self.assertEqual(self.invoke(self.cli,"check"),{"people":1,"interactions":1,"leads":1})
+        self.assertEqual(self.invoke(self.cli,"check"),{"people":1,"interactions":1,"leads":1,"followups":0})
         lead_md=(self.root/lead["note"]).read_text()
         self.assertEqual(lead_md.count(lead_input["notes"]),1)
         self.assertEqual(lead_md.count(lead_input["title"]),1)
@@ -250,7 +250,7 @@ class AccountManagementTest(unittest.TestCase):
         self.assertEqual(trace["relationship_temperature"],0)
         unsafe=self.write(self.cli,"add","person",d=self.record("person",id="person-escaped-table",title="Able | Finch"))
         table=roster.read_text()
-        self.assertIn("[Able &#124; Finch](../../knowledge/records/person-escaped-table.md) |  |  |  |  |  |  |  |",table)
+        self.assertIn("[Able &#124; Finch](../../knowledge/records/person-escaped-table.md) |  |  |  |  |  |  |  |  |",table)
         self.assertLess(table.index("Able &#124; Finch"),table.index("Jordan Birch"))
         for rejected in ({"relationship_temperature":4},{"relationship_temperature":False},{"priority":"High"}):
             patch.write_text(json.dumps({**rejected,**proof}))
@@ -268,6 +268,43 @@ class AccountManagementTest(unittest.TestCase):
         patch.write_text(json.dumps({"job_title":"Unsupported claim"}))
         self.assertIn("require a source",self.invoke(self.cli,"revise-person",person["id"],patch,
                                                          "--if-revision",removed["revision"],code=2))
+
+    def test_reviewed_followup_shares_one_record_and_preserves_archived_history(self):
+        source=self.write(self.root/"core/catalog.py","file",d={
+            "kind":"artifact","namespace":"synthetic","native_id":"reviewed-call",
+            "title":"Fictional reviewed call","date":"2026-11-20",
+            "pointer":"https://example.invalid/reviewed","capture":"approved"})
+        proof={"source_ids":[source["source_id"]]}
+        river=self.write(self.cli,"add","person",d=self.record("person",title="River Finch"))
+        jordan=self.write(self.cli,"add","person",d=self.record("person",id="person-jordan",title="Jordan Birch"))
+        quiet=self.write(self.cli,"add","person",d=self.record("person",id="person-quiet",title="Quiet Willow"))
+        call=self.write(self.cli,"add","interaction",d=self.record("interaction",title="Approved workshop call",
+                        interaction_kind="call",internal_attendees=["Pat Example"],signals=["An uncertain possibility"],
+                        person_ids=[river["id"],jordan["id"]],**proof))
+        chart=self.root/self.invoke(self.cli,"rebuild-org-chart")["view"]
+        people=chart.with_name("People.md"); needs=chart.with_name("Needs Attention.md")
+        details=chart.with_name("Person Details.md")
+        action=self.write(self.cli,"add","followup",d=self.record("followup",title="Prepare the workshop readout",
+                          person_ids=[river["id"],jordan["id"]],interaction_id=call["id"],owner_name="Pat Example",due="2026-12-03"))
+        self.assertEqual(self.invoke(self.cli,"show","followup",action["id"],"--trace")["source_interaction"]["id"],call["id"])
+        self.assertEqual(people.read_text().count("[1 open](Needs%20Attention.md) · next due 2026-12-03"),2)
+        self.assertEqual(needs.read_text().count("Owner: Pat Example"),1)
+        self.assertEqual(needs.read_text().count("interaction-fixture.md"),1)
+        self.assertNotIn("Quiet Willow",needs.read_text())
+        patch=self.root/"archive-profile.json"
+        patch.write_text(json.dumps({"archived_on":"2026-11-21","opportunity_relevance":"Workshop sponsor",**proof}))
+        self.invoke(self.cli,"revise-person",river["id"],patch,"--if-revision",river["revision"])
+        self.assertNotIn("River Finch",people.read_text())
+        self.assertIn("Archived: 2026-11-21",details.read_text())
+        self.assertIn("Workshop sponsor",details.read_text())
+        self.assertIn("interaction-fixture.md",details.read_text())
+        self.assertIn("resolve or reassign",self.invoke(self.cli,"revise-person",jordan["id"],patch,
+                                                       "--if-revision",jordan["revision"],code=2))
+        self.invoke(self.cli,"set-followup-status",action["id"],"done","--if-revision",action["revision"])
+        self.assertNotIn("1 open",people.read_text())
+        self.assertNotIn("Prepare the workshop readout",needs.read_text())
+        self.assertEqual(self.invoke(self.cli,"show","followup",action["id"])["status"],"done")
+        self.assertTrue((self.root/river["note"]).is_file())
 
     def test_view_contract_rejects_wrong_owner_escaping_collisions_and_symlinks(self):
         module=self.root/"core"
@@ -307,7 +344,7 @@ reject('account-management','Org Chart.md')
         reject("lead",self.record("lead",source_ids=["src-"+("0"*24)]),"not found")
         reject("lead",self.record("lead",evidence_ids=["ev-"+("0"*24)]),"unknown core evidence")
         reject("person",self.record("person",title="Different name"),"different contents")
-        self.assertEqual(self.invoke(self.cli,"check"),{"people":1,"interactions":1,"leads":0})
+        self.assertEqual(self.invoke(self.cli,"check"),{"people":1,"interactions":1,"leads":0,"followups":0})
 
 if __name__=="__main__":
     unittest.main()

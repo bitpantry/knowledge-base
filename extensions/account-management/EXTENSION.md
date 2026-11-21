@@ -2,7 +2,7 @@
 
 Track people, interactions, and leads without copying source content or rewriting the core. This extension is usable as a drop-in; the core owns install and optional reconciliation.
 
-- [Relationships](modules/relationships/README.md) owns [Person](modules/relationships/PERSON.md) and [Interaction](modules/relationships/INTERACTION.md).
+- [Relationships](modules/relationships/README.md) owns [Person](modules/relationships/PERSON.md) and [Interaction](modules/relationships/INTERACTION.md) and [Follow-up](modules/relationships/FOLLOWUP.md).
 - [Pipeline](modules/pipeline/README.md) owns [Lead](modules/pipeline/LEAD.md).
 - [Onboard or enrich a Person](modules/relationships/ONBOARD-PERSON.md).
 - [First use and fictional walkthrough](WORKFLOW.md).
@@ -11,4 +11,4 @@ The vault operator owns the extension. Use only with material approved for this 
 
 For contextual links from any source, use the core's [relationship workflow](../../core/MODEL-STORE.md) and the vault's registered labels. This extension does not infer which links or identities a source supports.
 
-- [Open or rebuild the generated org chart and People roster](WORKFLOW.md#generated-org-chart).
+- [Open or rebuild the generated People, Org Chart, Person Details and Needs Attention views](WORKFLOW.md#generated-org-chart).
