@@ -40,8 +40,13 @@ Installation and the optional retrospective preview use the core's shared workfl
 
 ## Generated org chart
 
-Open `views/README.md` in Obsidian and choose Org Chart or People. In Reading view the chart shows manager-to-report arrows, omitting disputed and circular arrows and listing their exceptions. Its People link opens the searchable alphabetical roster table; each name opens the exact canonical Person note. Known aliases appear only in the roster. Empty table cells are unknown, never implicitly neutral (0), and evidence is not copied into either view. The filenames provide titles when Obsidian's inline title is enabled. To create or rebuild the views, run:
+Open `views/README.md` in Obsidian and choose Org Chart or People. In Reading view the chart shows manager-to-report arrows, omitting disputed and circular arrows and listing their exceptions. Its People link opens the searchable alphabetical roster table; each name opens that person's generated profile, with a link to the canonical Person note. Known aliases appear in the roster and profiles. Empty table cells are unknown, never implicitly neutral (0), and evidence is not copied into either view. The filenames provide titles when Obsidian's inline title is enabled. To create or rebuild the views, run:
 
     python3 -B extensions/account-management/account.py rebuild-org-chart
 
-Once either view exists, supported Person additions, alias changes and revisions, Interaction and Follow-up writes, and the extension's `link-reporting` command refresh the generated views. Raw core writes do not execute extension code. If a command reports a view warning, its canonical write succeeded; correct the issue and rebuild. The People Follow-ups column links to [Needs Attention](modules/relationships/FOLLOWUP.md); Person Details links to profile and interaction history. Rebuilding writes only derived Markdown. There is no scheduler or sync task. Do not maintain the chart by hand, or treat an unknown manager, conflicting claims or cycles as a confirmed hierarchy.
+Once either view exists, supported Person additions, alias changes and revisions, Interaction and Follow-up writes, and the extension's `link-reporting` command refresh the generated views. Raw core writes do not execute extension code. If a command reports a view warning, its canonical write succeeded; correct the issue and rebuild. The People Follow-ups column links to [Needs Attention](modules/relationships/FOLLOWUP.md); individual profiles link to reporting, recent interactions and open follow-ups when recorded. Rebuilding writes only derived Markdown and the experimental Canvas. There is no scheduler or sync task. Do not maintain the chart by hand, or treat an unknown manager, conflicting claims or cycles as a confirmed hierarchy.
+
+The Org Chart links an experimental Obsidian Canvas with clickable profile cards.
+Warm relationships are green, cool relationships red/orange, neutral gray, and
+unknown uncolored; captions give exact scores. Conflicting and cyclic reporting
+edges are omitted. The Markdown chart remains usable without Canvas.

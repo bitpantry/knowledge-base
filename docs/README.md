@@ -41,3 +41,11 @@ For changes, start with the [source workflow](../core/WORKFLOWS.md), [concept wo
 An explicit install request uses one shared core workflow: wire the folder, assess prior records in the user's stated scope against the new extension's model definitions, and ask whether to apply the preview. No per-extension installer or one-scope-per-vault rule is required. The preview distinguishes proposed matches, ambiguity, and overlaps with other interpretations; only approved clear matches become local core-owned Markdown links. A single underlying record may support several independent namespaces without source duplication or reclassification. See the [reconciliation workflow](../core/RECONCILE.md). Bare wire-up does not perform reconciliation.
 
 [Generated views](../core/VIEWS.md) are human-facing projections, kept out of ordinary retrieval. The core guards output ownership; the extension owns domain rendering.
+
+Use a declared collection when a large view is better read as individual pages.
+The core keeps those generated pages in one owned subfolder and the Views index
+links to a flat overview, so adding records does not enlarge startup context.
+
+The experimental Account Management Canvas links stable profile pages and colors
+cards by recorded relationship temperature. Its independently usable Markdown
+chart remains the fallback; Canvas is generated output, never release content.

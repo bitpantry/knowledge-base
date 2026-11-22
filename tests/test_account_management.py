@@ -193,7 +193,7 @@ class AccountManagementTest(unittest.TestCase):
         body=out.read_text()
         self.assertIn("conflicting manager claims",body)
         self.assertIn("circular manager claims",body)
-        self.assertIn("[Terry Elm](../../knowledge/records/person-terry.md)",roster_body)
+        self.assertIn("[Terry Elm](people/person-terry.md)",roster_body)
         self.assertNotIn("manager not recorded",body)
         graph=body.split("```mermaid",1)[1].split("```",1)[0]
         self.assertNotIn("-->",graph)
@@ -212,7 +212,7 @@ class AccountManagementTest(unittest.TestCase):
         self.assertIn("River \\[Finch\\]",body)
         self.write(self.cli,"add","person",d=self.record("person",id="person-post",title="Later Person"))
         self.assertIn("Later Person",out.read_text())
-        self.assertIn("[Later Person](../../knowledge/records/person-post.md)",roster.read_text())
+        self.assertIn("[Later Person](people/person-post.md)",roster.read_text())
         (self.root/"catalog/README.md").write_text("# Test catalog")
         (self.root/"examples").mkdir()
         (self.root/"examples/recovery-observation.json").write_text("{}")
@@ -250,16 +250,35 @@ class AccountManagementTest(unittest.TestCase):
         self.assertEqual(trace["relationship_temperature"],0)
         unsafe=self.write(self.cli,"add","person",d=self.record("person",id="person-escaped-table",title="Able | Finch"))
         table=roster.read_text()
-        self.assertIn("[Able &#124; Finch](../../knowledge/records/person-escaped-table.md) |  |  |  |  |  |  |  |  |",table)
+        self.assertIn("[Able &#124; Finch](people/person-escaped-table.md) |  |  |  |  |  |  |  |  |",table)
         self.assertLess(table.index("Able &#124; Finch"),table.index("Jordan Birch"))
         for rejected in ({"relationship_temperature":4},{"relationship_temperature":False},{"priority":"High"}):
             patch.write_text(json.dumps({**rejected,**proof}))
             self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",trace["revision"],code=2)
         body=roster.read_text()
-        for shown in ("Operations Lead","Field Operations","| Jordan Birch |","| 0 | H | 2026-11-20 |"):
+        for shown in ("Operations Lead","Field Operations","| [Jordan Birch](people/person-manager.md) |","| 0 | H | 2026-11-20 |"):
             self.assertIn(shown,body)
         for hidden in ("river@example.invalid", "555 012",src["source_id"]):
             self.assertNotIn(hidden,body)
+        profile = view.parent / "people/person-fixture.md"
+        manager_profile = view.parent / "people/person-manager.md"
+        for shown in ("# River Finch", "river@example.invalid", "0 (neutral) · New contact",
+                      "[Jordan Birch](person-manager.md)", "Documented call",
+                      "../../../knowledge/records/person-fixture.md"):
+            self.assertIn(shown, profile.read_text())
+        self.assertIn("[River Finch](person-fixture.md)", manager_profile.read_text())
+        profile_mtime = profile.stat().st_mtime_ns
+        duplicate = self.write(self.cli,"add","person",d=self.record("person",id="person-river-2",title="River Finch"))
+        self.assertIn("[River Finch](people/person-river-2.md)", roster.read_text())
+        other_profile = view.parent / "people/person-river-2.md"
+        self.assertIn("# River Finch", other_profile.read_text())
+        self.assertEqual(profile.stat().st_mtime_ns, profile_mtime)
+        self.assertNotIn("## Reporting", other_profile.read_text())
+        patch.write_text(json.dumps({"title":"River Gray",**proof}))
+        self.invoke(self.cli,"revise-person",duplicate["id"],patch,"--if-revision",duplicate["revision"])
+        self.assertIn("# River Gray", other_profile.read_text())
+        self.assertIn("[River Gray](people/person-river-2.md)", roster.read_text())
+        self.assertEqual(profile.stat().st_mtime_ns, profile_mtime)
         patch.write_text(json.dumps({"business_unit":None,**proof}))
         removed=self.invoke(self.cli,"revise-person",person["id"],patch,"--if-revision",trace["revision"])
         self.assertNotIn("business_unit",removed)
@@ -283,7 +302,7 @@ class AccountManagementTest(unittest.TestCase):
                         person_ids=[river["id"],jordan["id"]],**proof))
         chart=self.root/self.invoke(self.cli,"rebuild-org-chart")["view"]
         people=chart.with_name("People.md"); needs=chart.with_name("Needs Attention.md")
-        details=chart.with_name("Person Details.md")
+        details=chart.parent/"people/person-fixture.md"
         action=self.write(self.cli,"add","followup",d=self.record("followup",title="Prepare the workshop readout",
                           person_ids=[river["id"],jordan["id"]],interaction_id=call["id"],owner_name="Pat Example",due="2026-12-03"))
         self.assertEqual(self.invoke(self.cli,"show","followup",action["id"],"--trace")["source_interaction"]["id"],call["id"])
@@ -295,7 +314,7 @@ class AccountManagementTest(unittest.TestCase):
         patch.write_text(json.dumps({"archived_on":"2026-11-21","opportunity_relevance":"Workshop sponsor",**proof}))
         self.invoke(self.cli,"revise-person",river["id"],patch,"--if-revision",river["revision"])
         self.assertNotIn("River Finch",people.read_text())
-        self.assertIn("Archived: 2026-11-21",details.read_text())
+        self.assertIn("**Archived:** 2026-11-21",details.read_text())
         self.assertIn("Workshop sponsor",details.read_text())
         self.assertIn("interaction-fixture.md",details.read_text())
         self.assertIn("resolve or reassign",self.invoke(self.cli,"revise-person",jordan["id"],patch,

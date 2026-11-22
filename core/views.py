@@ -1,10 +1,12 @@
-"""Publish derived, human-facing Markdown within a declared extension namespace."""
-from pathlib import Path
+"""Publish derived, human-facing views within a declared extension namespace."""
 import re
+import json
 from catalog import publish_note, require
 
 OWNER = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,79}\.md")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,79}\.(?:md|canvas)")
+FOLDER = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*/")
+MEMBER = re.compile(r"[a-z0-9][a-z0-9_-]{0,119}\.md")
 HEADER = "<!-- Generated human view. Not canonical knowledge. -->"
 
 
@@ -21,35 +23,70 @@ def declared(base, owner):
     names = []
     for line in p.read_text(encoding="utf-8").splitlines():
         if line and not line.startswith("#"):
-            require(line.startswith("- ") and NAME.fullmatch(line[2:]) is not None,
+            require(line.startswith("- ") and (NAME.fullmatch(line[2:]) or FOLDER.fullmatch(line[2:])),
                     "invalid view declaration: " + line)
             names.append(line[2:])
     require(len({name.casefold() for name in names}) == len(names), "duplicate view declaration")
     return names
 
 
+def safe_child(parent, part):
+    path = no_symlink(parent / part)
+    if parent.exists():
+        require(parent.is_dir(), "unsafe view directory")
+        require(not any(q.name.casefold() == part.casefold() and q.name != part
+                        for q in parent.iterdir()), "case-colliding view path")
+    return path
+
+
 def output(base, owner, name):
-    require(name in declared(base, owner), "undeclared or cross-owner view path")
-    root = no_symlink(base / "views")
-    parent = no_symlink(root / owner)
-    p = no_symlink(parent / name)
-    for home, part in ((root, owner), (parent, name)):
-        if home.exists():
-            require(home.is_dir(), "unsafe view directory")
-            require(not any(q.name.casefold() == part.casefold() and q.name != part for q in home.iterdir()),
-                    "case-colliding view path")
-    return p
+    require(name in declared(base, owner) and NAME.fullmatch(name),
+            "undeclared or cross-owner view path")
+    return safe_child(safe_child(no_symlink(base / "views"), owner), name)
 
 
-def write_generated(p, body):
-    content = HEADER + "\n\n" + body.rstrip() + "\n"
+def write_generated(p, body, *, header=HEADER):
+    content = header + "\n\n" + body.rstrip() + "\n"
     if p.exists():
-        require(p.is_file() and p.read_text(encoding="utf-8").startswith(HEADER + "\n"),
+        require(p.is_file(), "unsafe view file: " + str(p))
+        existing = p.read_text(encoding="utf-8")
+        require(existing.startswith(header + "\n"),
                 "refusing to overwrite a non-generated document: " + str(p))
-        if p.read_text(encoding="utf-8") == content:
+        if existing == content:
             return
     p.parent.mkdir(parents=True, exist_ok=True)
     publish_note(p, content, replace=p.exists())
+
+
+def publish_collection(base, owner, folder, bodies):
+    """Publish a complete one-level collection; caller holds the catalog lock."""
+    require(FOLDER.fullmatch(folder + "/") and folder + "/" in declared(base, owner),
+            "undeclared or cross-owner view collection")
+    require(all(MEMBER.fullmatch(name) and isinstance(body, str)
+                for name, body in bodies.items()), "invalid view collection member")
+    root = no_symlink(base / "views")
+    parent = safe_child(safe_child(root, owner), folder)
+    header = f"<!-- Generated human view: {owner}/{folder}. Not canonical knowledge. -->"
+    owned = set()
+    if parent.exists():
+        require(parent.is_dir(), "unsafe view collection directory")
+        desired = {name.casefold(): name for name in bodies}
+        for p in parent.iterdir():
+            if p.name.casefold() in desired:
+                require(p.name == desired[p.name.casefold()], "case-colliding view path")
+                require(not p.is_symlink() and p.is_file(), "unsafe view collection member")
+                require(p.read_text(encoding="utf-8").startswith(header + "\n"),
+                        "refusing to overwrite a non-generated document: " + str(p))
+            if not p.is_symlink() and p.is_file() and MEMBER.fullmatch(p.name):
+                with p.open("rb") as f:
+                    if f.read(len(header) + 1) == (header + "\n").encode():
+                        owned.add(p.name)
+    # Validate the entire batch before changing any member. Each replacement is atomic.
+    for name, body in sorted(bodies.items()):
+        write_generated(no_symlink(parent / name), body, header=header)
+    for name in sorted(owned - bodies.keys()):
+        no_symlink(parent / name).unlink()
+    return {name: parent / name for name in bodies}
 
 
 def index(base):
@@ -63,6 +100,10 @@ def index(base):
         if ext.is_symlink() or not ext.is_dir() or not (ext / "VIEWS.md").is_file():
             continue
         for name in declared(base, ext.name):
+            if name.endswith("/"):
+                continue  # The extension guides humans through its flat entry view.
+            if name.endswith(".canvas"):
+                continue  # Linked from the extension's Markdown overview.
             p = output(base, ext.name, name)
             if p.is_file() and p.read_text(encoding="utf-8").startswith(HEADER + "\n"):
                 lines.append(f"- [{name[:-3]}]({ext.name}/{name.replace(' ', '%20')})")
@@ -71,9 +112,32 @@ def index(base):
 
 def publish(base, owner, name, body):
     """Caller holds catalog lock; no imports or execution of other extensions."""
+    require(name.endswith(".md"), "use publish_canvas for Canvas outputs")
     p = output(base, owner, name)
     index(base)  # Validate known destinations before the first write.
     write_generated(p, body)
     index_path, index_body = index(base)
     write_generated(index_path, index_body)
+    return p
+
+
+def publish_canvas(base, owner, name, document):
+    """Publish an explicitly declared experimental JSON Canvas under the same lock."""
+    require(name.endswith(".canvas"), "invalid Canvas name")
+    p = output(base, owner, name)
+    marker = owner + "/" + name
+    if p.exists():
+        require(p.is_file(), "unsafe Canvas file")
+        try:
+            previous = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError):
+            raise ValueError("refusing to overwrite a non-generated Canvas")
+        require(isinstance(previous, dict) and previous.get("generatedBy") == marker,
+                "refusing to overwrite a non-generated Canvas")
+    require(isinstance(document, dict) and set(document) == {"nodes", "edges"}, "invalid Canvas document")
+    content = json.dumps(dict(document, generatedBy=marker), ensure_ascii=False, indent=2) + "\n"
+    if p.exists() and p.read_text(encoding="utf-8") == content:
+        return p
+    p.parent.mkdir(parents=True, exist_ok=True)
+    publish_note(p, content, replace=p.exists())
     return p
