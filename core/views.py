@@ -54,7 +54,11 @@ def marked(content, header=HEADER):
 
 
 def write_generated(p, body, *, header=HEADER):
-    content = body.rstrip() + "\n\n" + header + "\n"
+    # Standalone generated comments follow human-facing content by default.
+    lines = body.rstrip().splitlines()
+    comments = [line for line in lines if re.fullmatch(r"<!--.*-->", line)]
+    content = "\n".join(line for line in lines if not re.fullmatch(r"<!--.*-->", line)).strip("\n")
+    content += ("\n\n" + "\n".join(comments) if comments else "") + "\n\n" + header + "\n"
     if p.exists():
         require(p.is_file(), "unsafe view file: " + str(p))
         existing = p.read_text(encoding="utf-8")
@@ -109,9 +113,16 @@ def index(base):
         for name in declared(base, ext.name):
             if name.endswith("/"):
                 continue  # The extension guides humans through its flat entry view.
-            if name.endswith(".canvas"):
-                continue  # Linked from the extension's Markdown overview.
             p = output(base, ext.name, name)
+            if name.endswith(".canvas"):
+                if p.is_file():
+                    try:
+                        generated = json.loads(p.read_text(encoding="utf-8"))
+                    except (ValueError, UnicodeError):
+                        continue
+                    if isinstance(generated, dict) and generated.get("generatedBy") == ext.name + "/" + name:
+                        lines.append(f"- [{name[:-7]}]({ext.name}/{name.replace(' ', '%20')})")
+                continue
             if p.is_file() and marked(p.read_text(encoding="utf-8")):
                 lines.append(f"- [{name[:-3]}]({ext.name}/{name.replace(' ', '%20')})")
     return index_path, "\n".join(lines)
@@ -142,9 +153,11 @@ def publish_canvas(base, owner, name, document):
         require(isinstance(previous, dict) and previous.get("generatedBy") == marker,
                 "refusing to overwrite a non-generated Canvas")
     require(isinstance(document, dict) and set(document) == {"nodes", "edges"}, "invalid Canvas document")
+    index(base)
     content = json.dumps(dict(document, generatedBy=marker), ensure_ascii=False, indent=2) + "\n"
-    if p.exists() and p.read_text(encoding="utf-8") == content:
-        return p
-    p.parent.mkdir(parents=True, exist_ok=True)
-    publish_note(p, content, replace=p.exists())
+    if not p.exists() or p.read_text(encoding="utf-8") != content:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        publish_note(p, content, replace=p.exists())
+    index_path, index_body = index(base)
+    write_generated(index_path, index_body)
     return p

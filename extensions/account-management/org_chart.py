@@ -1,14 +1,15 @@
-"""Render Account Management's reporting claims as a navigable Markdown chart."""
+"""Render Account Management profiles, Roster, attention and reporting Canvas."""
 import html
 import re
+from urllib.parse import urlsplit
 from collections import defaultdict
 
 import model_store
 import views
 
 OWNER = "account-management"
-FILENAME = "Org Chart.md"
-PEOPLE = "People.md"
+FILENAME = "Org Chart.canvas"
+PEOPLE = "Roster.md"
 ATTENTION = "Needs Attention.md"
 PROFILES = "people"
 PROFILE_LIMIT = 5
@@ -21,23 +22,6 @@ def label(value):
 def graph_id(rid):
     # Core Person IDs allow lowercase ASCII, digits and dashes only.
     return "n_" + rid.replace("-", "_")
-
-
-def graph_label(value):
-    # Mermaid quoted-text entities are decimal #codepoint;. Encode all syntax
-    # characters (including # itself) rather than passing through HTML,
-    # quotes, Markdown fences, Mermaid directives, or line separators.
-    return "".join(c if c in " -,.()" or c.isascii() and c.isalnum()
-                   else f"#{ord(c)};" for c in value)
-
-
-def diagram(scoped, key, parents, cycles):
-    lines = ["```mermaid", "flowchart TD"]
-    for rid in sorted(scoped, key=key):
-        lines.append(f'  {graph_id(rid)}["{graph_label(scoped[rid]["title"])}"]')
-    for rid in sorted(set(parents) - cycles, key=key):
-        lines.append(f"  {graph_id(parents[rid])} --> {graph_id(rid)}")
-    return [*lines, "```", ""]
 
 
 def reporting(base,account,scoped):
@@ -60,31 +44,6 @@ def reporting(base,account,scoped):
     return grouped,conflicts,parents,cycles
 
 
-def render(base, people, refreshed):
-    lines = [f"<!-- Refreshed {refreshed} (UTC). -->", "", "[People](People.md) · [Experimental Canvas](Org%20Chart.canvas)", ""]
-    people = {rid:p for rid,p in people.items() if "archived_on" not in p}
-    accounts = sorted({p["account"] for p in people.values()})
-    for account in accounts:
-        scoped = {rid:p for rid,p in people.items() if p["account"] == account}
-        key = lambda rid: (scoped[rid]["title"].casefold(), rid)
-        def person(rid):
-            return label(scoped[rid]["title"])
-        grouped,conflicts,parents,cycles=reporting(base,account,scoped)
-        if len(accounts) > 1:
-            lines += [f"## {label(account)}", ""]
-        lines += diagram(scoped, key, parents, cycles)
-        if conflicts or cycles:
-            lines += ["**Reporting exceptions (not drawn)**", ""]
-            for rid in sorted(conflicts | cycles, key=key):
-                options = ", ".join(person(manager) for manager in sorted(grouped[rid], key=key))
-                reason = "conflicting manager claims" if rid in conflicts else "circular manager claims"
-                lines.append(f"- {person(rid)}: {reason} ({options})")
-        lines.append("")
-    if not people:
-        lines += ["No people recorded.", ""]
-    return "\n".join(lines)
-
-
 def open_followups(person, followups):
     return [f for f in followups if f["account"] == person["account"]
             and person["id"] in f["person_ids"] and f["status"] == "open"]
@@ -96,7 +55,7 @@ def needs_attention(person, followups):
 
 
 def render_people(base, people, interactions, followups, refreshed):
-    lines = ["---", "cssclasses: account-management-people", "---", "", "[Org Chart](Org%20Chart.md) · [Needs Attention](Needs%20Attention.md)", ""]
+    lines = ["---", "cssclasses: account-management-people", "---", "", "[Org Chart](Org%20Chart.canvas) · [Needs Attention](Needs%20Attention.md)", ""]
     people = {rid:p for rid,p in people.items() if "archived_on" not in p}
     accounts = sorted({p["account"] for p in people.values()})
     last = {}
@@ -150,7 +109,7 @@ def profile_link(person, *, inside=False):
 
 
 def render_attention(people, interactions, followups, refreshed):
-    lines=[f"<!-- Refreshed {refreshed} (UTC). -->","", "[People](People.md)", ""]
+    lines=["[Roster](Roster.md)", ""]
     meetings={item["id"]:item for item in interactions}
     ranked={"H":0,"M":1,"L":2}
     opened=[f for f in followups if f["status"]=="open"]
@@ -181,7 +140,52 @@ def render_attention(people, interactions, followups, refreshed):
         lines.append("")
     if not included:
         lines.append("No active people with a recorded priority or open follow-up.")
+    lines += ["", f"<!-- Refreshed {refreshed} (UTC). -->"]
     return "\n".join(lines)
+
+
+def linkedin(person):
+    """Use an explicit field or one unambiguous clean URL already recorded in this person's notes."""
+    if person.get("linkedin_url"):
+        return person["linkedin_url"]
+    candidates = set()
+    for raw in re.findall(r"(?:^|(?<=[.!?])\s+)(?:User-supplied\s+)?LinkedIn(?:\s+profile)?:\s*(https://(?:www\.)?linkedin\.com/in/[^\s<>]+)", person.get("notes") or "", re.I):
+        target = raw.rstrip(".,;)")
+        parsed = urlsplit(target)
+        if re.fullmatch(r"/in/[A-Za-z0-9_%.-]+/?", parsed.path) and not parsed.query and not parsed.fragment:
+            candidates.add(target)
+    return next(iter(candidates)) if len(candidates) == 1 else ""
+
+
+def note_entries(person, manager=None):
+    """Suppress exact displayed duplicates only; preserve unique context and source wording."""
+    value = re.sub(r"^User-provided information \(\d{4}-\d{2}-\d{2}\):\s*", "", person.get("notes") or "")
+    profile = linkedin(person)
+    result = []
+    for entry in re.split(r"(?<=[.!?])\s+|\n+", value):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if profile and re.fullmatch(r"(?:User-supplied\s+)?LinkedIn(?:\s+profile)?:\s*" + re.escape(profile) + r"\s*[.]?", entry, re.I):
+            continue
+        if manager:
+            names = "(?:" + "|".join(re.escape(name) for name in sorted([manager["title"], *manager.get("aliases", [])],key=len,reverse=True)) + ")"
+            clause = r"(?:reports to|reporting to)\s+" + names + r"(?:\s*\(" + re.escape(manager["id"]) + r"\))?"
+            entry = re.sub(r"(?:,?\s+and\s+|[,;]\s*)" + clause + r"(?=[.;]|$)", "", entry, flags=re.I)
+            subjects = [person["title"], *person.get("aliases", []), "she", "he", "they"]
+            if re.fullmatch(r"(?:" + "|".join(re.escape(name) for name in subjects) + r")\s+" + clause + r"[.]?", entry, re.I):
+                continue
+            if re.fullmatch(r"(?:Reports to|Manager):?\s*" + names + r"[.]?", entry, re.I):
+                continue
+        duplicates = [("Organization",person.get("organization")), ("Title",person.get("job_title")),
+                      ("Business Unit",person.get("business_unit")), ("Email",person.get("work_email")),
+                      ("Phone",person.get("work_phone")), ("Priority",person.get("priority"))]
+        if any(value and entry.rstrip(".").casefold() == (caption+": "+value).casefold()
+               for caption,value in duplicates):
+            continue
+        if entry not in result:
+            result.append(entry)
+    return result
 
 
 def render_profiles(base, people, interactions, followups, refreshed=None):
@@ -209,7 +213,8 @@ def render_profiles(base, people, interactions, followups, refreshed=None):
                 return label(value or "").replace("|", "&#124;")
             temperature = p.get("relationship_temperature")
             score = "" if temperature is None else f"{temperature:+d}" if temperature else "0 (neutral)"
-            linked_in = f"[Profile]({p['linkedin_url']})" if p.get("linkedin_url") else ""
+            profile_url = linkedin(p)
+            linked_in = f"[Profile]({profile_url})" if profile_url else ""
             lines += ["| Field | Value |", "| --- | --- |"]
             fields = [("ID", cell(rid)), ("Organization", cell(p.get("organization"))),
                       ("Business Unit", cell(p.get("business_unit"))), ("Title", cell(p.get("job_title"))),
@@ -224,14 +229,15 @@ def render_profiles(base, people, interactions, followups, refreshed=None):
             lines += ["", "## Relationship context", ""]
             for field, caption in (("strategic_value","Strategic Value"),
                                    ("opportunity_relevance","Opportunity Relevance"), ("notes","Notes")):
-                value = re.sub(r"^User-provided information \(\d{4}-\d{2}-\d{2}\):\s*", "", p.get(field) or "")
-                fragments = re.split(r"(?<=[.!?])\s+", value) if value else [""]
-                lines.append(f"- **{caption}:** " + label(fragments[0]))
-                lines.extend("  - " + label(fragment) for fragment in fragments[1:])
+                manager_record = scoped[parents[rid]] if rid in parents and rid not in cycles else None
+                fragments = note_entries(p, manager_record) if field == "notes" else [x for x in re.split(r"(?<=[.!?])\s+", p.get(field) or "") if x]
+                lines += [f"### {caption}", ""]
+                lines += ["- " + label(fragment) for fragment in fragments] if fragments else ["None"]
+                lines += [""]
             manager = profile_link(scoped[parents[rid]], inside=True) if rid in parents and rid not in cycles else ""
             reports = ", ".join(profile_link(x, inside=True) for x in reports_by_manager.get(rid, ()))
             lines += ["", "## Reporting", "", "| Field | Value |", "| --- | --- |",
-                      f"| Reports To | {manager} |", f"| Direct Reports | {reports} |", ""]
+                      f"| Reports To | {manager or 'None'} |", f"| Direct Reports | {reports or 'None'} |", ""]
             if rid in conflicts or rid in cycles:
                 lines += ["Reporting claims unresolved.", ""]
             active = actions_by_person.get((account,rid),())
@@ -244,33 +250,38 @@ def render_profiles(base, people, interactions, followups, refreshed=None):
                 if len(active) > PROFILE_LIMIT:
                     lines += ["", "[See all open follow-ups](../Needs%20Attention.md)"]
                 lines += [""]
+            else:
+                lines += ["None", ""]
             recent = interactions_by_person.get((account,rid),())
             lines += ["## Recent interactions", ""]
             if recent:
                 lines.extend(f"- {e['date']} · {record_link(e, depth=3)}" for e in recent[:PROFILE_LIMIT])
                 lines += [""]
+            else:
+                lines += ["None", ""]
             lines.append(f"[Canonical Person record](../../../knowledge/records/{rid}.md)")
             bodies[rid + ".md"] = "\n".join(lines)
     return bodies
 
 
 def refresh(base, people, interactions, followups, refreshed, *, initialize=False):
-    names = (FILENAME, PEOPLE, ATTENTION)
-    destinations = [views.output(base, OWNER, n) for n in names]
-    if initialize or any(p.exists() for p in destinations):
+    names = (PEOPLE, ATTENTION)
+    destinations = [views.output(base, OWNER, name) for name in names]
+    canvas = views.output(base, OWNER, FILENAME)
+    if initialize or canvas.exists() or any(p.exists() for p in destinations):
         for path in destinations:
             if path.exists():
                 views.require(path.is_file() and views.marked(path.read_text(encoding="utf-8")),
                               "refusing to overwrite a non-generated document: " + str(path))
-        views.index(base)  # Validate the shared index before updating collection files.
+        views.index(base)
         profiles = render_profiles(base, people, interactions, followups)
         views.publish_collection(base, OWNER, PROFILES, profiles)
-        bodies = (render(base, people, refreshed), render_people(base, people, interactions, followups, refreshed),
+        views.publish_canvas(base, OWNER, FILENAME, render_canvas(base, people, followups))
+        bodies = (render_people(base, people, interactions, followups, refreshed),
                   render_attention(people, interactions, followups, refreshed))
         for name, body in zip(names, bodies):
             views.publish(base, OWNER, name, body)
-        views.publish_canvas(base, OWNER, "Org Chart.canvas", render_canvas(base, people, followups))
-        return destinations[0]
+        return canvas
     return None
 
 
@@ -304,20 +315,21 @@ def render_canvas(base, people, followups=()):
                 # One text card, with a name-only linked title and no detached metadata nodes.
                 title = label(scoped[rid]["title"]).replace("|", "&#124;")
                 text = f"# [[views/{OWNER}/people/{rid}|{title}]]\n\n"
-                if scoped[rid].get("job_title"):
-                    text += label(scoped[rid]["job_title"]) + "\n\n"
-                text += "**Relationship Temperature:** " + caption
+                for field, caption_label in (("job_title", "Title"), ("business_unit", "Business Unit"), ("priority", "Priority")):
+                    text += f"**{caption_label}:** " + label(scoped[rid].get(field, "")) + "\n\n"
+                colored = f'<span style="color: {PALETTE[score]}">{caption}</span>' if score is not None else ""
+                text += "**Relationship Temperature:** " + colored
                 if needs_attention(scoped[rid], followups):
                     text += "\n\n**Needs Attention**"
                 if rid in conflicts: text += "\n\nConflicting manager claims"
                 if rid in cycles: text += "\n\nCircular manager claims"
-                card = dict(id=graph_id(rid), type="text", x=col*330, y=account_y+depth*290,
-                            width=300, height=250, text=text)
+                card = dict(id=graph_id(rid), type="text", x=col*370, y=account_y+depth*380,
+                            width=340, height=330, text=text)
                 if score is not None:
                     card["color"] = PALETTE[score]
                 nodes.append(card)
         edges.extend(dict(id="edge_"+rid,fromNode=graph_id(manager),fromSide="bottom",
                           toNode=graph_id(rid),toSide="top",toEnd="arrow")
                      for rid,manager in sorted(parents.items()))
-        account_y += (max(levels,default=0)+1)*290 + 100
+        account_y += (max(levels,default=0)+1)*380 + 100
     return dict(nodes=nodes,edges=edges)

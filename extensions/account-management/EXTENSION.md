@@ -11,4 +11,4 @@ The vault operator owns the extension. Use only with material approved for this 
 
 For contextual links from any source, use the core's [relationship workflow](../../core/MODEL-STORE.md) and the vault's registered labels. This extension does not infer which links or identities a source supports.
 
-- [Open or rebuild the generated People, Org Chart, individual Person profiles and Needs Attention views](WORKFLOW.md#generated-org-chart).
+- [Open or rebuild the generated Roster, Org Chart, individual Person profiles and Needs Attention views](WORKFLOW.md#generated-org-chart).

@@ -40,16 +40,20 @@ Installation and the optional retrospective preview use the core's shared workfl
 
 ## Generated org chart
 
-Open `views/README.md` in Obsidian and choose Org Chart or People. In Reading view the chart shows manager-to-report arrows, omitting disputed and circular arrows and listing their exceptions. Its People link opens the searchable alphabetical roster table; each name opens that person's generated profile, with a link to the canonical Person note. Known aliases appear in the roster and profiles. Empty table cells are unknown, never implicitly neutral (0), and evidence is not copied into either view. The filenames provide titles when Obsidian's inline title is enabled. To create or rebuild the views, run:
+Open `views/README.md` in Obsidian and choose Org Chart or Roster. Org Chart is
+an Obsidian Canvas: manager-to-report arrows omit disputed and circular claims,
+with exceptions shown on the affected card. The Roster is an alphabetical table;
+each name opens that person's detail and its canonical Person link. Empty property
+cells are unknown, never implicitly neutral (0). To create or rebuild the views:
 
     python3 -B extensions/account-management/account.py rebuild-org-chart
 
-Once either view exists, supported Person additions, alias changes and revisions, Interaction and Follow-up writes, and the extension's `link-reporting` command refresh the generated views. Raw core writes do not execute extension code. If a command reports a view warning, its canonical write succeeded; correct the issue and rebuild. The People Follow-ups column links to [Needs Attention](modules/relationships/FOLLOWUP.md); individual profiles link to reporting, recent interactions and open follow-ups when recorded. Rebuilding writes only derived Markdown and the experimental Canvas. There is no scheduler or sync task. Do not maintain the chart by hand, or treat an unknown manager, conflicting claims or cycles as a confirmed hierarchy.
+Once either view exists, supported Person additions, alias changes and revisions, Interaction and Follow-up writes, and the extension's `link-reporting` command refresh the generated views. Raw core writes do not execute extension code. If a command reports a view warning, its canonical write succeeded; correct the issue and rebuild. The Roster Follow-ups column links to [Needs Attention](modules/relationships/FOLLOWUP.md); individual profiles link to reporting, recent interactions and open follow-ups when recorded. Rebuilding writes only derived Markdown and the experimental Canvas. There is no scheduler or sync task. Do not maintain the chart by hand, or treat an unknown manager, conflicting claims or cycles as a confirmed hierarchy.
 
-The Org Chart links an experimental Obsidian Canvas with clickable profile cards.
+The Org Chart is an Obsidian Canvas with clickable profile cards.
 Warm relationships are green, cool relationships red/orange, neutral gray, and
 unknown uncolored; the person card gives the exact score. Conflicting and cyclic reporting
-edges are omitted. The Markdown chart remains usable without Canvas.
+edges are omitted. The legacy Markdown org chart is retired.
 
 Profiles keep the same fields and sections, including blanks for unknown values.
 Relationship Status is legacy free text and is never mapped to Relationship
@@ -59,7 +63,7 @@ clears the flag unless that person still has a priority. Interaction history sta
 Canvas titles link directly to the actual person detail; there are no detached
 metadata cards.
 
-For a wider People roster in Obsidian, explicitly install its scoped stylesheet:
+For a wider Roster in Obsidian, explicitly install its scoped stylesheet:
 
     python3 -B extensions/account-management/account.py style-people
 
@@ -67,3 +71,17 @@ This enables only `account-management-people`, preserves existing appearance
 settings and enabled snippets, refuses manual-file and symlink collisions, and
 leaves ordinary note widths unchanged. Narrow panes scroll the roster table
 horizontally. Run the command again after a software update to refresh the snippet.
+
+Relationship Context has Strategic Value, Opportunity Relevance and Notes
+subheadings, with one idea per bullet and `None` for an empty subsection. Empty
+follow-up/history sections also say `None` (no recorded entries). Notes suppress
+only exact displayed-field duplicates or an unambiguous resolved reporting clause;
+unique context and the underlying canonical note are preserved. An explicitly
+labeled, unambiguous clean LinkedIn profile already in a person's notes can be
+shown in the top table; no external profile or identity is inferred. Canvas cards
+show Title, Business Unit and Priority, with colored temperature values.
+
+On a controlled beta cutover, retain a recoverable copy of retired generated
+views and verify their exact generator ownership before removal. Runtime refresh
+does not delete undeclared legacy or manual files. Update active links to Roster
+and Canvas, then verify they resolve. No live records belong in release artifacts.

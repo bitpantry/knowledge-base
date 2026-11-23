@@ -38,9 +38,9 @@ overview, rather than registering every collection member in the Views index.
 An extension may explicitly declare a flat `.canvas` output and publish it with
 `views.publish_canvas` under the catalog lock. The JSON contains a `generatedBy`
 owner/path marker; only a file with that exact marker may be replaced. The same
-namespace, collision and symlink guards apply. Canvas is excluded from the shared
-index and linked from a Markdown overview. It remains derived and must never be
-ingested, indexed, or packaged. Markdown remains the independently usable fallback.
+namespace, collision and symlink guards apply. An owned Canvas is linked from the shared
+index as well as any extension overview. It remains derived and must never be
+ingested, indexed, or packaged. The extension chooses its human entry points.
 
 ## Presentation markers
 
@@ -48,3 +48,6 @@ Generated Markdown puts its ownership marker on the final line, after all conten
 and refresh comments. Boundary recognition accepts both existing leading markers
 and new trailing markers so a rebuild can move them without adopting manual files.
 Index discovery, collision checks and collection pruning use that same rule.
+
+Standalone generated HTML comments are moved below human-facing content by the
+shared Markdown writer, with the ownership marker always last.

@@ -66,3 +66,38 @@ class CanvasTests(unittest.TestCase):
             canvas=org_chart.render_canvas(None,people)
         self.assertEqual(len(canvas['edges']),1)
         self.assertEqual(len([n for n in canvas['nodes'] if n['type']=='text']),4)
+
+    def test_context_layout_empty_states_linkedin_and_conservative_deduplication(self):
+        import copy
+        manager=dict(id='person-manager',title='Jordan Birch',aliases=['Jordy'],account='synthetic')
+        profile_url='https://www.linkedin.com/in/river-finch/'
+        person=dict(id='person-river',title='River Finch',account='synthetic',organization='Birch Workshop',
+                    job_title='Lead',business_unit='Workshop',priority='H',relationship_temperature=2,
+                    notes='User-provided information (2026-11-23): River works in the service unit, and reports to Jordy (person-manager). Organization: Birch Workshop. User-supplied LinkedIn profile: '+profile_url+' . Unique planning sponsor. Direct profile access was unavailable.')
+        people={p['id']:p for p in (person,manager)};before=copy.deepcopy(people)
+        with patch.object(org_chart,'reporting',return_value=({},set(),{'person-river':'person-manager'},set())):
+            profiles=org_chart.render_profiles(None,people,[],[])
+            canvas=org_chart.render_canvas(None,people)
+        body=profiles['person-river.md'];notes=body.split('### Notes\n\n')[1].split('## Reporting')[0]
+        self.assertIn('| LinkedIn | [Profile]('+profile_url+') |',body)
+        self.assertEqual(body.count(profile_url),1)
+        self.assertNotIn('reports to',notes);self.assertNotIn('Organization: Birch Workshop',notes)
+        self.assertIn('- River works in the service unit.',notes)
+        self.assertIn('- Unique planning sponsor.',notes)
+        self.assertIn('- Direct profile access was unavailable.',notes)
+        self.assertIn('| Reports To | [Jordan Birch](person-manager.md) |',body)
+        self.assertIn('### Strategic Value\n\nNone\n\n### Opportunity Relevance\n\nNone',body)
+        self.assertIn('## Open follow-ups\n\nNone',body)
+        self.assertIn('## Recent interactions\n\nNone',body)
+        blank=profiles['person-manager.md']
+        self.assertIn('### Notes\n\nNone',blank)
+        self.assertEqual(people,before)
+        card=next(n for n in canvas['nodes'] if n['id']=='n_person_river')
+        self.assertIn('**Title:** Lead',card['text']);self.assertIn('**Business Unit:** Workshop',card['text'])
+        self.assertIn('**Priority:** H',card['text']);self.assertIn('**Needs Attention**',card['text'])
+        self.assertIn('<span style="color: #318662">+2</span>',card['text'])
+        self.assertEqual(org_chart.linkedin(dict(notes='A colleague profile: '+profile_url)),'')
+        self.assertEqual(org_chart.linkedin(dict(notes='LinkedIn: '+profile_url+' . LinkedIn: https://linkedin.com/in/another/ .')),'')
+        self.assertEqual(org_chart.linkedin(dict(notes='LinkedIn: '+profile_url+'?secret=value')),'')
+        unresolved=org_chart.note_entries(person)
+        self.assertTrue(any('reports to Jordy' in text for text in unresolved))

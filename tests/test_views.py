@@ -84,3 +84,19 @@ class ViewCollections(unittest.TestCase):
         self.assertTrue(index.read_text().endswith(views.HEADER + "\n"))
         views.publish(self.base, "account-management", "People.md", "# People again")
         self.assertEqual(index.read_text().count("account-management/People.md"), 1)
+
+    def test_all_standalone_comments_default_to_footer_and_canvas_is_indexed(self):
+        declaration=self.base/'extensions/account-management/VIEWS.md'
+        declaration.write_text(declaration.read_text()+'- Org Chart.canvas\n')
+        p=views.publish(self.base,'account-management','People.md','<!-- Refreshed today -->\n\n# Content\n\n<!-- Second comment -->\nText')
+        body=p.read_text()
+        self.assertTrue(body.startswith('# Content'))
+        self.assertLess(body.index('Text'),body.index('<!-- Refreshed'))
+        self.assertTrue(body.endswith(views.HEADER+'\n'))
+        document={'nodes':[],'edges':[]}
+        views.publish_canvas(self.base,'account-management','Org Chart.canvas',document)
+        index=self.base/'views/README.md'
+        self.assertIn('account-management/Org%20Chart.canvas',index.read_text())
+        index.unlink()
+        views.publish_canvas(self.base,'account-management','Org Chart.canvas',document)
+        self.assertIn('account-management/Org%20Chart.canvas',index.read_text())

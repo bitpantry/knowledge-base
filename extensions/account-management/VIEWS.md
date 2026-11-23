@@ -1,7 +1,6 @@
 # Declared human views
 
-- Org Chart.md
-- People.md
+- Roster.md
 - Needs Attention.md
 - people/
 - Org Chart.canvas
