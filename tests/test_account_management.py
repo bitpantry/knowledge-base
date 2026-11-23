@@ -435,6 +435,8 @@ reject('account-management','Org Chart.md')
         self.assertEqual(after,{'theme':'moonstone','enabledCssSnippets':['my-existing-style','account-management-people']})
         css=config.parent/'snippets/account-management-people.css'
         self.assertIn('overflow-x: auto',css.read_text())
+        self.assertIn('display: block',css.read_text())
+        self.assertIn('.account-management-people .metadata-container',css.read_text())
         self.assertTrue(all('account-management-people' in selector for selector in css.read_text().split('{')[:-1] if selector.strip()))
         stamps=(config.stat().st_mtime_ns,css.stat().st_mtime_ns)
         self.invoke(self.cli,'style-people')

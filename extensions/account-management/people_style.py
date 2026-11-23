@@ -21,8 +21,13 @@ CSS = MARKER + """
 }
 .markdown-preview-view.account-management-people table,
 .markdown-source-view.account-management-people table {
-  width: max-content;
-  min-width: 100%;
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.markdown-preview-view.account-management-people .metadata-container {
+  display: none;
 }
 .markdown-preview-view.account-management-people :is(th, td),
 .markdown-source-view.account-management-people :is(th, td) {
