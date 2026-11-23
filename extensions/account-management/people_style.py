@@ -9,15 +9,20 @@ CSS = MARKER + """
 .markdown-preview-view.account-management-people,
 .markdown-source-view.mod-cm6.account-management-people {
   --file-line-width: 100%;
+  overflow-x: auto;
 }
 .markdown-preview-view.account-management-people .markdown-preview-sizer,
 .markdown-source-view.mod-cm6.account-management-people .cm-sizer {
   max-width: none;
 }
 .markdown-preview-view.account-management-people .el-table,
+.markdown-preview-view.account-management-people .table-wrapper,
+.markdown-preview-view.account-management-people .markdown-preview-section > div:has(table),
 .markdown-source-view.account-management-people .cm-table-widget {
   overflow-x: auto;
   max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 .markdown-preview-view.account-management-people table,
 .markdown-source-view.account-management-people table {
@@ -25,6 +30,16 @@ CSS = MARKER + """
   width: 100%;
   overflow-x: auto;
   max-width: 100%;
+}
+ .markdown-preview-view.account-management-people :is(table, .table-wrapper, .el-table)::-webkit-scrollbar {
+  height: 10px;
+}
+.markdown-preview-view.account-management-people :is(table, .table-wrapper, .el-table)::-webkit-scrollbar-thumb {
+  background: var(--text-faint);
+  border-radius: 5px;
+}
+.markdown-preview-view.account-management-people :is(table, .table-wrapper, .el-table)::-webkit-scrollbar-track {
+  background: var(--background-secondary);
 }
 .markdown-preview-view.account-management-people .metadata-container {
   display: none;
