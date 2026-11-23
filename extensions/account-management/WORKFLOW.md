@@ -48,5 +48,22 @@ Once either view exists, supported Person additions, alias changes and revisions
 
 The Org Chart links an experimental Obsidian Canvas with clickable profile cards.
 Warm relationships are green, cool relationships red/orange, neutral gray, and
-unknown uncolored; captions give exact scores. Conflicting and cyclic reporting
+unknown uncolored; the person card gives the exact score. Conflicting and cyclic reporting
 edges are omitted. The Markdown chart remains usable without Canvas.
+
+Profiles keep the same fields and sections, including blanks for unknown values.
+Relationship Status is legacy free text and is never mapped to Relationship
+Temperature. The roster, profile, Needs Attention list and Canvas flag an active
+person with an H/M/L priority or an open follow-up. Completing the last follow-up
+clears the flag unless that person still has a priority. Interaction history stays.
+Canvas titles link directly to the actual person detail; there are no detached
+metadata cards.
+
+For a wider People roster in Obsidian, explicitly install its scoped stylesheet:
+
+    python3 -B extensions/account-management/account.py style-people
+
+This enables only `account-management-people`, preserves existing appearance
+settings and enabled snippets, refuses manual-file and symlink collisions, and
+leaves ordinary note widths unchanged. Narrow panes scroll the roster table
+horizontally. Run the command again after a software update to refresh the snippet.

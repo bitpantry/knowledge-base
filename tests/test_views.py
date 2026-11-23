@@ -62,3 +62,25 @@ class ViewCollections(unittest.TestCase):
         self.collection.symlink_to(self.base / "extensions", target_is_directory=True)
         with self.assertRaises(ValueError):
             self.publish({"person-a.md": "# unsafe"})
+
+    def test_footer_markers_regenerate_index_and_prune_only_owned_members(self):
+        header = "<!-- Generated human view: account-management/people. Not canonical knowledge. -->"
+        self.collection.mkdir(parents=True)
+        legacy = self.collection / "person-old.md"
+        legacy.write_text(header + "\n\n# Old")
+        keep = self.collection / "person-new.md"
+        keep.write_text("# Current\n\n" + header + "\n")
+        manual = self.collection / "manual.md"
+        manual.write_text("# Manual\n" + header + "\nThis is not a boundary marker.")
+        binary = self.collection / "manual-binary.md"
+        binary.write_bytes(b"\xff")
+        self.publish({"person-new.md": "# Updated"})
+        self.assertEqual(binary.read_bytes(), b"\xff")
+        self.assertFalse(legacy.exists())
+        self.assertTrue(manual.exists())
+        self.assertTrue(keep.read_text().endswith(header + "\n"))
+        views.publish(self.base, "account-management", "People.md", "# People")
+        index = self.base / "views/README.md"
+        self.assertTrue(index.read_text().endswith(views.HEADER + "\n"))
+        views.publish(self.base, "account-management", "People.md", "# People again")
+        self.assertEqual(index.read_text().count("account-management/People.md"), 1)

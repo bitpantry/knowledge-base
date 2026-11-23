@@ -85,8 +85,18 @@ def render(base, people, refreshed):
     return "\n".join(lines)
 
 
+def open_followups(person, followups):
+    return [f for f in followups if f["account"] == person["account"]
+            and person["id"] in f["person_ids"] and f["status"] == "open"]
+
+
+def needs_attention(person, followups):
+    return "archived_on" not in person and (person.get("priority") in {"H", "M", "L"}
+                                            or bool(open_followups(person, followups)))
+
+
 def render_people(base, people, interactions, followups, refreshed):
-    lines = [f"<!-- Refreshed {refreshed} (UTC). -->", "", "[Org Chart](Org%20Chart.md) · [Needs Attention](Needs%20Attention.md)", ""]
+    lines = ["---", "cssclasses: account-management-people", "---", "", "[Org Chart](Org%20Chart.md) · [Needs Attention](Needs%20Attention.md)", ""]
     people = {rid:p for rid,p in people.items() if "archived_on" not in p}
     accounts = sorted({p["account"] for p in people.values()})
     last = {}
@@ -111,19 +121,22 @@ def render_people(base, people, interactions, followups, refreshed):
             score = person.get("relationship_temperature")
             temp = (f"{score:+d}" if score else "0") if score is not None else ""
             unit = " / ".join(cell(person[key]) for key in ("organization","business_unit") if key in person)
-            items = [f for f in followups if f["account"]==account and rid in f["person_ids"] and f["status"]=="open"]
+            items = open_followups(person, followups)
             dates = sorted(f["due"] for f in items if "due" in f)
             count = f"[{len(items)} open](Needs%20Attention.md)" if items else ""
             if dates:
                 count += " · next due " + dates[0]
+            attention = "**Needs Attention**" if needs_attention(person, followups) else ""
+            state = " · ".join(part for part in (count, attention) if part)
             row = [name,cell(person.get("job_title","")),unit,manager,
                    cell(person.get("relationship_owner","")),temp,
                    cell(person.get("priority","")) if person.get("priority") in {"H","M","L"} else "",
-                   last.get((account,rid),""),count]
+                   last.get((account,rid),""),state]
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
     if not people:
         lines.append("No people recorded.")
+    lines += ["", f"<!-- Refreshed {refreshed} (UTC). -->"]
     return "\n".join(lines)
 
 
@@ -144,7 +157,7 @@ def render_attention(people, interactions, followups, refreshed):
     by_person={rid:[f for f in opened if rid in f["person_ids"] and f["account"]==p["account"]]
                for rid,p in people.items()}
     included=[p for p in people.values()
-              if "archived_on" not in p and (p.get("priority") in ranked or by_person[p["id"]])]
+              if needs_attention(p, followups)]
     def order(p):
         items=by_person[p["id"]]
         dates=[f["due"] for f in items if "due" in f]
@@ -189,48 +202,41 @@ def render_profiles(base, people, interactions, followups, refreshed=None):
         for report in sorted(set(parents) - cycles,key=lambda rid:(scoped[rid]["title"].casefold(),rid)):
             reports_by_manager[parents[report]].append(scoped[report])
         for rid, p in sorted(scoped.items()):
-            lines = [f"# {label(p['title'])}", "",
-                     "[People](../People.md) · [Org Chart](../Org%20Chart.md)", ""]
-            info = []
-            for field, caption in (
-                ("job_title","Role"), ("organization","Organization"), ("business_unit","Business unit"),
-                ("relationship_owner","Relationship owner"), ("priority","Priority"), ("archived_on","Archived"),
-                ("work_email","Work email"), ("work_phone","Work phone")
-            ):
-                if field in p:
-                    info.append(f"- **{caption}:** {label(p[field])}")
-            if p.get("linkedin_url"):
-                info.append(f"- **LinkedIn:** [Profile]({p['linkedin_url']})")
-            if p.get("aliases"):
-                info.append("- **Also known as:** " + ", ".join(label(a) for a in p["aliases"]))
-            if "relationship_temperature" in p:
-                value = p["relationship_temperature"]
-                score = f"{value:+d}" if value else "0 (neutral)"
-                note = " · " + label(p["relationship_temperature_rationale"]) if p.get("relationship_temperature_rationale") else ""
-                info.append("- **Relationship temperature:** " + score + note)
-            if info:
-                lines += info + [""]
-            context = []
-            for field, caption in (("strategic_value","Strategic value"), ("opportunity_relevance","Opportunity relevance")):
-                if p.get(field):
-                    context.append(f"- **{caption}:** {label(p[field])}")
-            if p.get("notes"):
-                context += ([""] if context else []) + [label(p["notes"])]
-            if context:
-                lines += ["## Relationship context", "", *context, ""]
-            org = []
+            lines = [f"# {label(p['title'])}", ""]
+            if needs_attention(p, followups):
+                lines += ["**Needs Attention**", ""]
+            def cell(value):
+                return label(value or "").replace("|", "&#124;")
+            temperature = p.get("relationship_temperature")
+            score = "" if temperature is None else f"{temperature:+d}" if temperature else "0 (neutral)"
+            linked_in = f"[Profile]({p['linkedin_url']})" if p.get("linkedin_url") else ""
+            lines += ["| Field | Value |", "| --- | --- |"]
+            fields = [("ID", cell(rid)), ("Organization", cell(p.get("organization"))),
+                      ("Business Unit", cell(p.get("business_unit"))), ("Title", cell(p.get("job_title"))),
+                      ("Email", cell(p.get("work_email"))), ("Phone", cell(p.get("work_phone"))),
+                      ("LinkedIn", linked_in), ("Relationship Owner", cell(p.get("relationship_owner"))),
+                      ("Relationship Status", cell(p.get("relationship_status"))),
+                      ("Relationship Temperature", score),
+                      ("Temperature Rationale", cell(p.get("relationship_temperature_rationale"))),
+                      ("Priority", cell(p.get("priority"))), ("Archived", cell(p.get("archived_on"))),
+                      ("Also known as", ", ".join(cell(a) for a in p.get("aliases", [])))]
+            lines += [f"| {caption} | {value} |" for caption,value in fields]
+            lines += ["", "## Relationship context", ""]
+            for field, caption in (("strategic_value","Strategic Value"),
+                                   ("opportunity_relevance","Opportunity Relevance"), ("notes","Notes")):
+                value = re.sub(r"^User-provided information \(\d{4}-\d{2}-\d{2}\):\s*", "", p.get(field) or "")
+                fragments = re.split(r"(?<=[.!?])\s+", value) if value else [""]
+                lines.append(f"- **{caption}:** " + label(fragments[0]))
+                lines.extend("  - " + label(fragment) for fragment in fragments[1:])
+            manager = profile_link(scoped[parents[rid]], inside=True) if rid in parents and rid not in cycles else ""
+            reports = ", ".join(profile_link(x, inside=True) for x in reports_by_manager.get(rid, ()))
+            lines += ["", "## Reporting", "", "| Field | Value |", "| --- | --- |",
+                      f"| Reports To | {manager} |", f"| Direct Reports | {reports} |", ""]
             if rid in conflicts or rid in cycles:
-                org.append("- Reporting claims unresolved; see the Org Chart.")
-            elif rid in parents:
-                org.append("- **Manager:** " + profile_link(scoped[parents[rid]], inside=True))
-            reports = reports_by_manager.get(rid,())
-            if reports:
-                org.append("- **Direct reports:** " + ", ".join(profile_link(x, inside=True) for x in reports))
-            if org:
-                lines += ["## Reporting", "", *org, ""]
+                lines += ["Reporting claims unresolved.", ""]
             active = actions_by_person.get((account,rid),())
+            lines += ["## Open follow-ups", ""]
             if active:
-                lines += ["## Open follow-ups", ""]
                 for f in active[:PROFILE_LIMIT]:
                     detail = [label(f["owner_name"])] if f.get("owner_name") else []
                     if f.get("due"): detail.append("Due " + f["due"])
@@ -239,8 +245,8 @@ def render_profiles(base, people, interactions, followups, refreshed=None):
                     lines += ["", "[See all open follow-ups](../Needs%20Attention.md)"]
                 lines += [""]
             recent = interactions_by_person.get((account,rid),())
+            lines += ["## Recent interactions", ""]
             if recent:
-                lines += ["## Recent interactions", ""]
                 lines.extend(f"- {e['date']} · {record_link(e, depth=3)}" for e in recent[:PROFILE_LIMIT])
                 lines += [""]
             lines.append(f"[Canonical Person record](../../../knowledge/records/{rid}.md)")
@@ -254,7 +260,7 @@ def refresh(base, people, interactions, followups, refreshed, *, initialize=Fals
     if initialize or any(p.exists() for p in destinations):
         for path in destinations:
             if path.exists():
-                views.require(path.is_file() and path.read_text(encoding="utf-8").startswith(views.HEADER + "\n"),
+                views.require(path.is_file() and views.marked(path.read_text(encoding="utf-8")),
                               "refusing to overwrite a non-generated document: " + str(path))
         views.index(base)  # Validate the shared index before updating collection files.
         profiles = render_profiles(base, people, interactions, followups)
@@ -263,7 +269,7 @@ def refresh(base, people, interactions, followups, refreshed, *, initialize=Fals
                   render_attention(people, interactions, followups, refreshed))
         for name, body in zip(names, bodies):
             views.publish(base, OWNER, name, body)
-        views.publish_canvas(base, OWNER, "Org Chart.canvas", render_canvas(base, people))
+        views.publish_canvas(base, OWNER, "Org Chart.canvas", render_canvas(base, people, followups))
         return destinations[0]
     return None
 
@@ -272,7 +278,7 @@ PALETTE = {-3: "#BC3B46", -2: "#D16345", -1: "#DC923E", 0: "#687482",
            1: "#67A278", 2: "#318662", 3: "#106748"}
 
 
-def render_canvas(base, people):
+def render_canvas(base, people, followups=()):
     """File cards open stable generated profiles; ambiguous/cyclic edges stay omitted."""
     nodes, edges = [], []
     active = {rid:p for rid,p in people.items() if "archived_on" not in p}
@@ -294,16 +300,22 @@ def render_canvas(base, people):
         for depth, level in sorted(levels.items()):
             for col, rid in enumerate(level):
                 score = scoped[rid].get("relationship_temperature")
-                card = dict(id=graph_id(rid), type="file", x=col*330, y=account_y+depth*290,
-                            width=300, height=190, file=f"views/{OWNER}/people/{rid}.md")
+                caption = "" if score is None else f"{score:+d}" if score else "0 (neutral)"
+                # One text card, with a name-only linked title and no detached metadata nodes.
+                title = label(scoped[rid]["title"]).replace("|", "&#124;")
+                text = f"# [[views/{OWNER}/people/{rid}|{title}]]\n\n"
+                if scoped[rid].get("job_title"):
+                    text += label(scoped[rid]["job_title"]) + "\n\n"
+                text += "**Relationship Temperature:** " + caption
+                if needs_attention(scoped[rid], followups):
+                    text += "\n\n**Needs Attention**"
+                if rid in conflicts: text += "\n\nConflicting manager claims"
+                if rid in cycles: text += "\n\nCircular manager claims"
+                card = dict(id=graph_id(rid), type="text", x=col*330, y=account_y+depth*290,
+                            width=300, height=250, text=text)
                 if score is not None:
                     card["color"] = PALETTE[score]
                 nodes.append(card)
-                caption = "Unknown" if score is None else f"{score:+d}"
-                if rid in conflicts: caption += " · conflicting manager claims"
-                if rid in cycles: caption += " · circular manager claims"
-                nodes.append(dict(id="caption_"+rid,type="text",x=col*330,y=account_y+depth*290+195,
-                                  width=300,height=65,text="Temperature: "+caption))
         edges.extend(dict(id="edge_"+rid,fromNode=graph_id(manager),fromSide="bottom",
                           toNode=graph_id(rid),toSide="top",toEnd="arrow")
                      for rid,manager in sorted(parents.items()))

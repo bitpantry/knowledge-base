@@ -49,3 +49,10 @@ links to a flat overview, so adding records does not enlarge startup context.
 The experimental Account Management Canvas links stable profile pages and colors
 cards by recorded relationship temperature. Its independently usable Markdown
 chart remains the fallback; Canvas is generated output, never release content.
+
+People profiles use a fixed field/section order with unknown values left blank.
+Legacy free-text relationship status is displayed separately from temperature;
+there is no inferred conversion. Roster, profiles, attention list and Canvas share
+one flag: an active person with a recorded H/M/L priority or an open follow-up.
+Canvas person cards carry their own temperature and attention label. Optional
+Obsidian styling is installed explicitly and targets only the roster's CSS class.

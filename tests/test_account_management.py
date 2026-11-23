@@ -262,7 +262,7 @@ class AccountManagementTest(unittest.TestCase):
             self.assertNotIn(hidden,body)
         profile = view.parent / "people/person-fixture.md"
         manager_profile = view.parent / "people/person-manager.md"
-        for shown in ("# River Finch", "river@example.invalid", "0 (neutral) · New contact",
+        for shown in ("# River Finch", "river@example.invalid", "| Relationship Temperature | 0 (neutral) |", "| Temperature Rationale | New contact |",
                       "[Jordan Birch](person-manager.md)", "Documented call",
                       "../../../knowledge/records/person-fixture.md"):
             self.assertIn(shown, profile.read_text())
@@ -273,7 +273,7 @@ class AccountManagementTest(unittest.TestCase):
         other_profile = view.parent / "people/person-river-2.md"
         self.assertIn("# River Finch", other_profile.read_text())
         self.assertEqual(profile.stat().st_mtime_ns, profile_mtime)
-        self.assertNotIn("## Reporting", other_profile.read_text())
+        self.assertIn("| Reports To |  |", other_profile.read_text())
         patch.write_text(json.dumps({"title":"River Gray",**proof}))
         self.invoke(self.cli,"revise-person",duplicate["id"],patch,"--if-revision",duplicate["revision"])
         self.assertIn("# River Gray", other_profile.read_text())
@@ -314,7 +314,7 @@ class AccountManagementTest(unittest.TestCase):
         patch.write_text(json.dumps({"archived_on":"2026-11-21","opportunity_relevance":"Workshop sponsor",**proof}))
         self.invoke(self.cli,"revise-person",river["id"],patch,"--if-revision",river["revision"])
         self.assertNotIn("River Finch",people.read_text())
-        self.assertIn("**Archived:** 2026-11-21",details.read_text())
+        self.assertIn("| Archived | 2026-11-21 |",details.read_text())
         self.assertIn("Workshop sponsor",details.read_text())
         self.assertIn("interaction-fixture.md",details.read_text())
         self.assertIn("resolve or reassign",self.invoke(self.cli,"revise-person",jordan["id"],patch,
@@ -364,6 +364,88 @@ reject('account-management','Org Chart.md')
         reject("lead",self.record("lead",evidence_ids=["ev-"+("0"*24)]),"unknown core evidence")
         reject("person",self.record("person",title="Different name"),"different contents")
         self.assertEqual(self.invoke(self.cli,"check"),{"people":1,"interactions":1,"leads":0,"followups":0})
+
+
+    def test_followup_lifecycle_clears_all_attention_surfaces_and_keeps_history(self):
+        source=self.write(self.root/'core/catalog.py','file',d={
+            'kind':'artifact','namespace':'synthetic','native_id':'lifecycle',
+            'title':'Synthetic lifecycle call','date':'2026-11-23',
+            'pointer':'https://example.invalid/lifecycle','capture':'approved'})
+        proof={'source_ids':[source['source_id']]}
+        notes='User-provided information (2026-11-23): Supports the workshop. Asked for a readout.'
+        river=self.write(self.cli,'add','person',d=self.record('person',title='River Finch',
+            notes=notes,relationship_temperature=0,**proof))
+        priority=self.write(self.cli,'add','person',d=self.record('person',id='person-priority',title='Priority Pine',priority='H',**proof))
+        self.invoke(self.cli,'rebuild-org-chart')
+        call=self.write(self.cli,'add','interaction',d=self.record('interaction',title='Workshop planning call',**proof))
+        action=self.write(self.cli,'add','followup',d=self.record('followup',title='Send workshop readout',
+            person_ids=[river['id']],interaction_id=call['id'],owner_name='Pat Example',due='2026-12-01'))
+        folder=self.root/'views/account-management'
+        detail=folder/'people/person-fixture.md'
+        canonical=(self.root/river['note']).read_bytes()
+        interaction=(self.root/call['note']).read_bytes()
+        def verify(flagged):
+            profile=detail.read_text(); roster=(folder/'People.md').read_text(); needs=(folder/'Needs Attention.md').read_text()
+            node=next(n for n in json.loads((folder/'Org Chart.canvas').read_text())['nodes'] if n['id']=='n_person_fixture')
+            self.assertEqual('**Needs Attention**' in node['text'],flagged)
+            self.assertEqual('**Needs Attention**' in profile,flagged)
+            row=next(row for row in roster.splitlines() if '(people/person-fixture.md)' in row)
+            self.assertEqual('**Needs Attention**' in row,flagged)
+            self.assertEqual('[1 open]' in row,flagged)
+            self.assertEqual('Send workshop readout' in needs,flagged)
+            self.assertEqual('Send workshop readout' in profile,flagged)
+            self.assertIn('Workshop planning call',profile)
+            self.assertIn('[[views/account-management/people/person-fixture|River Finch]]',node['text'])
+            self.assertNotIn('People.md',node['text']); self.assertNotIn('Org Chart.md',node['text'])
+            self.assertEqual(node['color'],'#687482')
+            self.assertTrue(profile.endswith('<!-- Generated human view: account-management/people. Not canonical knowledge. -->\n'))
+            self.assertNotIn('User-provided information',profile)
+            self.assertNotIn('[People]',profile);self.assertNotIn('[Org Chart]',profile)
+            self.assertIn('| Relationship Status |  |',profile)
+            self.assertIn('| Relationship Temperature | 0 (neutral) |',profile)
+            self.assertIn('- **Notes:** Supports the workshop.\n  - Asked for a readout.',profile)
+            for field in ('ID','Organization','Title','Email','Phone','LinkedIn','Relationship Owner','Priority','Reports To','Direct Reports'):
+                self.assertIn('| '+field+' |',profile)
+            self.assertTrue(roster.startswith('---\ncssclasses: account-management-people\n---'))
+            self.assertIn('person-priority.md',needs)
+            self.assertIn('**Needs Attention**',(folder/'people/person-priority.md').read_text())
+            priority_node=next(n for n in json.loads((folder/'Org Chart.canvas').read_text())['nodes'] if n['id']=='n_person_priority')
+            self.assertIn('**Needs Attention**',priority_node['text'])
+            self.assertEqual((self.root/river['note']).read_bytes(),canonical)
+            self.assertEqual((self.root/call['note']).read_bytes(),interaction)
+            # Optional local previews contain only this synthetic fixture.
+            import os
+            preview=os.environ.get('KM_PEOPLE_PREVIEW_DIR')
+            if preview:
+                destination=Path(preview)/('open-followup' if flagged else 'completed-followup')
+                shutil.copytree(self.root,destination)
+        verify(True)
+        self.invoke(self.cli,'set-followup-status',action['id'],'done','--if-revision','invalid',code=2)
+        self.assertEqual(self.invoke(self.cli,'show','followup',action['id'])['status'],'open')
+        self.invoke(self.cli,'set-followup-status',action['id'],'done','--if-revision',action['revision'])
+        verify(False)
+        self.assertEqual(self.invoke(self.cli,'show','followup',action['id'])['status'],'done')
+        self.assertEqual(len(self.invoke(self.cli,'show','person',river['id'],'--trace')['interactions']),1)
+
+    def test_people_style_is_scoped_preserves_settings_and_is_idempotent(self):
+        config=self.root/'.obsidian/appearance.json';config.parent.mkdir()
+        config.write_text(json.dumps({'theme':'moonstone','enabledCssSnippets':['my-existing-style']}))
+        self.invoke(self.cli,'style-people')
+        after=json.loads(config.read_text())
+        self.assertEqual(after,{'theme':'moonstone','enabledCssSnippets':['my-existing-style','account-management-people']})
+        css=config.parent/'snippets/account-management-people.css'
+        self.assertIn('overflow-x: auto',css.read_text())
+        self.assertTrue(all('account-management-people' in selector for selector in css.read_text().split('{')[:-1] if selector.strip()))
+        stamps=(config.stat().st_mtime_ns,css.stat().st_mtime_ns)
+        self.invoke(self.cli,'style-people')
+        self.assertEqual(stamps,(config.stat().st_mtime_ns,css.stat().st_mtime_ns))
+        css.write_text('/* My manual stylesheet */')
+        self.assertIn('manual',self.invoke(self.cli,'style-people',code=2))
+        self.assertEqual(css.read_text(),'/* My manual stylesheet */')
+        config.unlink(); outside=self.root/'outside.json'; outside.write_text('{}')
+        config.symlink_to(outside)
+        self.assertIn('symlink',self.invoke(self.cli,'style-people',code=2))
+        self.assertEqual(outside.read_text(),'{}')
 
 if __name__=="__main__":
     unittest.main()

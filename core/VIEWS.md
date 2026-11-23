@@ -41,3 +41,10 @@ owner/path marker; only a file with that exact marker may be replaced. The same
 namespace, collision and symlink guards apply. Canvas is excluded from the shared
 index and linked from a Markdown overview. It remains derived and must never be
 ingested, indexed, or packaged. Markdown remains the independently usable fallback.
+
+## Presentation markers
+
+Generated Markdown puts its ownership marker on the final line, after all content
+and refresh comments. Boundary recognition accepts both existing leading markers
+and new trailing markers so a rebuild can move them without adopting manual files.
+Index discovery, collision checks and collection pruning use that same rule.

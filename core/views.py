@@ -45,12 +45,20 @@ def output(base, owner, name):
     return safe_child(safe_child(no_symlink(base / "views"), owner), name)
 
 
+def marked(content, header=HEADER):
+    """Recognize exact boundary markers, including pre-footer generated output."""
+    newline = b"\n" if isinstance(content, bytes) else "\n"
+    if isinstance(content, bytes):
+        header = header.encode("utf-8")
+    return content.startswith(header + newline) or content.rstrip().endswith(newline + header)
+
+
 def write_generated(p, body, *, header=HEADER):
-    content = header + "\n\n" + body.rstrip() + "\n"
+    content = body.rstrip() + "\n\n" + header + "\n"
     if p.exists():
         require(p.is_file(), "unsafe view file: " + str(p))
         existing = p.read_text(encoding="utf-8")
-        require(existing.startswith(header + "\n"),
+        require(marked(existing, header),
                 "refusing to overwrite a non-generated document: " + str(p))
         if existing == content:
             return
@@ -75,12 +83,11 @@ def publish_collection(base, owner, folder, bodies):
             if p.name.casefold() in desired:
                 require(p.name == desired[p.name.casefold()], "case-colliding view path")
                 require(not p.is_symlink() and p.is_file(), "unsafe view collection member")
-                require(p.read_text(encoding="utf-8").startswith(header + "\n"),
+                require(marked(p.read_text(encoding="utf-8"), header),
                         "refusing to overwrite a non-generated document: " + str(p))
             if not p.is_symlink() and p.is_file() and MEMBER.fullmatch(p.name):
-                with p.open("rb") as f:
-                    if f.read(len(header) + 1) == (header + "\n").encode():
-                        owned.add(p.name)
+                if marked(p.read_bytes(), header):
+                    owned.add(p.name)
     # Validate the entire batch before changing any member. Each replacement is atomic.
     for name, body in sorted(bodies.items()):
         write_generated(no_symlink(parent / name), body, header=header)
@@ -93,7 +100,7 @@ def index(base):
     root = no_symlink(base / "views")
     index_path = no_symlink(root / "README.md")
     if index_path.exists():
-        require(index_path.is_file() and index_path.read_text(encoding="utf-8").startswith(HEADER + "\n"),
+        require(index_path.is_file() and marked(index_path.read_text(encoding="utf-8")),
                 "refusing to overwrite a non-generated view index")
     lines = ["# Generated views", "", "Browse these derived views. Canonical knowledge lives in the catalog and knowledge records.", ""]
     for ext in sorted(no_symlink(base / "extensions").iterdir()):
@@ -105,7 +112,7 @@ def index(base):
             if name.endswith(".canvas"):
                 continue  # Linked from the extension's Markdown overview.
             p = output(base, ext.name, name)
-            if p.is_file() and p.read_text(encoding="utf-8").startswith(HEADER + "\n"):
+            if p.is_file() and marked(p.read_text(encoding="utf-8")):
                 lines.append(f"- [{name[:-3]}]({ext.name}/{name.replace(' ', '%20')})")
     return index_path, "\n".join(lines)
 

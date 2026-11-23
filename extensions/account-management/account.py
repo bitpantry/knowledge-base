@@ -371,6 +371,7 @@ def main():
     a.add_argument("--evidence-id",action="append",default=[])
     a.add_argument("--source-id",action="append",default=[])
     sub.add_parser("rebuild-org-chart")
+    sub.add_parser("style-people")
     sub.add_parser("check")
     args=p.parse_args()
     if args.action=="add":
@@ -390,6 +391,10 @@ def main():
         result=revise_person(args.id,load_input(args.input),args.if_revision)
     elif args.action=="link-reporting":
         result=link_reporting(args.account,args.report,args.manager,args.evidence_id,args.source_id)
+    elif args.action=="style-people":
+        import people_style
+        with write_lock(ROOT):
+            result=people_style.install(ROOT)
     elif args.action=="rebuild-org-chart":
         with write_lock(ROOT):
             result={"view":refresh_chart(initialize=True).relative_to(ROOT).as_posix()}
